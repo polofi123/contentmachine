@@ -199,9 +199,15 @@ export default async function WorkbenchPage({ params }: PageProps<"/videos/[id]"
               <SlotCard
                 key={slot.key}
                 {...common}
-                summary={legoCount > 0 ? `${legoCount} of 7 described` : null}
+                summary={
+                  legoCount > 0
+                    ? `${legoCount} of 7 described`
+                    : video.notes
+                      ? "notes, not sorted yet"
+                      : null
+                }
               >
-                <LegosBody videoId={id} video={video} />
+                <LegosBody videoId={id} video={video} notes={video.notes} />
               </SlotCard>
             );
           }

@@ -41,7 +41,17 @@ export type LegoValues = {
   [K in (typeof LEGOS)[number][0]]: string | null;
 };
 
-export function LegosBody({ videoId, video }: { videoId: string; video: LegoValues }) {
+export function LegosBody({
+  videoId,
+  video,
+  notes,
+}: {
+  videoId: string;
+  video: LegoValues;
+  notes: string | null;
+}) {
+  const filled = LEGOS.filter(([f]) => video[f]).length;
+
   return (
     <form action={updateLegos} className="space-y-2.5">
       <input type="hidden" name="video_id" value={videoId} />
@@ -50,20 +60,50 @@ export function LegosBody({ videoId, video }: { videoId: string; video: LegoValu
         someone else&apos;s video as for yours. Naming a technique from the framework is a different
         thing, and lives in the other cards.
       </p>
-      {LEGOS.map(([field, label, hint]) => (
-        <label key={field} className="block">
-          <span className="mb-1 block text-[11px] text-ink-dim">{label}</span>
-          <textarea
-            name={field}
-            defaultValue={video[field] ?? ""}
-            rows={1}
-            placeholder={hint}
-            className={`${input} resize-none`}
-          />
-        </label>
-      ))}
+
+      {/* The pile comes first on purpose. Seven empty fields is a form; a box
+          you can dump into is a place to think. Fill the fields whenever. */}
+      <label className="block">
+        <span className="mb-1 flex items-baseline gap-2">
+          <span className="text-[11px] text-ink-dim">The pile</span>
+          <span className="text-[10px] text-ink-faint">
+            dump anything here — sort it into the seven below whenever you feel like it
+          </span>
+        </span>
+        <textarea
+          name="notes"
+          defaultValue={notes ?? ""}
+          rows={5}
+          placeholder="Half-thoughts, references, links, a line you overheard…"
+          className={`${input} text-[13px]`}
+        />
+      </label>
+
+      <details open={filled > 0} className="rounded-lg border border-border-soft">
+        <summary className="cursor-pointer px-2.5 py-2 text-[11px] text-ink-dim">
+          The seven Legos{" "}
+          <span className="text-ink-faint">
+            — {filled} of 7 filled, all optional
+          </span>
+        </summary>
+        <div className="space-y-2.5 border-t border-border-soft px-2.5 py-2.5">
+          {LEGOS.map(([field, label, hint]) => (
+            <label key={field} className="block">
+              <span className="mb-1 block text-[11px] text-ink-dim">{label}</span>
+              <textarea
+                name={field}
+                defaultValue={video[field] ?? ""}
+                rows={1}
+                placeholder={hint}
+                className={`${input} resize-none`}
+              />
+            </label>
+          ))}
+        </div>
+      </details>
+
       <button type="submit" className={btn}>
-        Save Legos
+        Save
       </button>
     </form>
   );
@@ -150,80 +190,117 @@ export function ComponentsBody({
   components: PickerComponent[];
   showPlacement?: boolean;
 }) {
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [placementFor, setPlacementFor] = useState<string | null>(null);
+  const [infoFor, setInfoFor] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-ink-faint">
-        Tap to mark <span className="text-accent">used</span> · again for{" "}
-        <span className="line-through">skipped</span> · again to clear. Skipped is stored, so later
-        you can compare videos that used a technique against ones that deliberately didn&apos;t.
-      </p>
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-xs text-ink-faint">
+          Tap to mark <span className="text-accent">used</span> · again for{" "}
+          <span className="line-through">skipped</span> · again to clear.
+        </p>
+        {/* Reading every definition at once is the fastest way to remember what
+            you actually have available, rather than picking the three you can
+            recall from memory. */}
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="shrink-0 text-[11px] text-ink-faint transition-colors hover:text-accent"
+        >
+          {showAll ? "hide explanations" : "explain all"}
+        </button>
+      </div>
 
       <div className="space-y-1.5">
-        {components.map((c) => (
-          <div key={c.id}>
-            <div className="flex items-stretch gap-1.5">
-              <form action={cycleComponent} className="min-w-0 flex-1">
-                <input type="hidden" name="video_id" value={videoId} />
-                <input type="hidden" name="component_id" value={c.id} />
-                <input type="hidden" name="slot_key" value={slotKey} />
-                <input type="hidden" name="current" value={c.state} />
-                <button
-                  type="submit"
-                  className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors ${STATE_STYLE[c.state]}`}
-                >
-                  {c.source_id && (
-                    <span className="shrink-0 font-mono text-[10px] opacity-60">{c.source_id}</span>
-                  )}
-                  <span className={`min-w-0 flex-1 truncate ${c.is_placeholder ? "italic" : ""}`}>
-                    {c.name}
-                  </span>
-                  {c.state === "used" && c.placement_sec != null && (
-                    <span className="shrink-0 font-mono text-[10px]">@{c.placement_sec}s</span>
-                  )}
-                </button>
-              </form>
+        {components.map((c) => {
+          const open = showAll || infoFor === c.id;
+          return (
+            <div key={c.id}>
+              <div className="flex items-stretch gap-1.5">
+                <form action={cycleComponent} className="min-w-0 flex-1">
+                  <input type="hidden" name="video_id" value={videoId} />
+                  <input type="hidden" name="component_id" value={c.id} />
+                  <input type="hidden" name="slot_key" value={slotKey} />
+                  <input type="hidden" name="current" value={c.state} />
+                  <button
+                    type="submit"
+                    className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors ${STATE_STYLE[c.state]}`}
+                  >
+                    {c.source_id && (
+                      <span className="shrink-0 font-mono text-[10px] opacity-60">
+                        {c.source_id}
+                      </span>
+                    )}
+                    <span className={`min-w-0 flex-1 truncate ${c.is_placeholder ? "italic" : ""}`}>
+                      {c.name}
+                    </span>
+                    {c.state === "used" && c.placement_sec != null && (
+                      <span className="shrink-0 font-mono text-[10px]">@{c.placement_sec}s</span>
+                    )}
+                  </button>
+                </form>
 
-              {showPlacement && c.state === "used" && (
-                <button
-                  type="button"
-                  onClick={() => setExpanded(expanded === c.id ? null : c.id)}
-                  className="shrink-0 rounded-lg border border-border-soft px-2 text-[10px] text-ink-faint hover:text-accent"
+                {showPlacement && c.state === "used" && (
+                  <button
+                    type="button"
+                    onClick={() => setPlacementFor(placementFor === c.id ? null : c.id)}
+                    className="shrink-0 rounded-lg border border-border-soft px-2 text-[10px] text-ink-faint hover:text-accent"
+                  >
+                    where?
+                  </button>
+                )}
+
+                {c.body && (
+                  <button
+                    type="button"
+                    onClick={() => setInfoFor(infoFor === c.id ? null : c.id)}
+                    aria-label={`What is ${c.name}?`}
+                    className={`shrink-0 rounded-lg border border-border-soft px-2 font-mono text-[11px] transition-colors ${
+                      open ? "text-accent" : "text-ink-faint hover:text-accent"
+                    }`}
+                  >
+                    ?
+                  </button>
+                )}
+              </div>
+
+              {open && c.body && (
+                <p className="prose-body mt-1 rounded-lg border border-border-soft bg-surface-2 px-2.5 py-2 text-[12px] text-ink-dim">
+                  {c.body}
+                </p>
+              )}
+
+              {showPlacement && placementFor === c.id && (
+                <form
+                  action={setPlacement}
+                  className="mt-1.5 flex gap-1.5 rounded-lg border border-border bg-surface-2 p-2"
                 >
-                  where?
-                </button>
+                  <input type="hidden" name="video_id" value={videoId} />
+                  <input type="hidden" name="component_id" value={c.id} />
+                  <input
+                    name="placement_sec"
+                    type="number"
+                    min="0"
+                    defaultValue={c.placement_sec ?? ""}
+                    placeholder="sec"
+                    className="w-20 rounded-md border border-border bg-surface px-2 py-1 text-xs outline-none focus:border-accent-dim"
+                  />
+                  <input
+                    name="placement_note"
+                    defaultValue={c.placement_note ?? ""}
+                    placeholder="how it lands there"
+                    className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1 text-xs outline-none focus:border-accent-dim"
+                  />
+                  <button type="submit" className={btn}>
+                    Set
+                  </button>
+                </form>
               )}
             </div>
-
-            {showPlacement && expanded === c.id && (
-              <form
-                action={setPlacement}
-                className="mt-1.5 flex gap-1.5 rounded-lg border border-border bg-surface-2 p-2"
-              >
-                <input type="hidden" name="video_id" value={videoId} />
-                <input type="hidden" name="component_id" value={c.id} />
-                <input
-                  name="placement_sec"
-                  type="number"
-                  min="0"
-                  defaultValue={c.placement_sec ?? ""}
-                  placeholder="sec"
-                  className="w-20 rounded-md border border-border bg-surface px-2 py-1 text-xs outline-none focus:border-accent-dim"
-                />
-                <input
-                  name="placement_note"
-                  defaultValue={c.placement_note ?? ""}
-                  placeholder="how it lands there"
-                  className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1 text-xs outline-none focus:border-accent-dim"
-                />
-                <button type="submit" className={btn}>
-                  Set
-                </button>
-              </form>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

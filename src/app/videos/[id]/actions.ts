@@ -61,11 +61,14 @@ export async function updateLegos(formData: FormData) {
     lego_visual_format: f("lego_visual_format"),
     lego_key_visuals: f("lego_key_visuals"),
     lego_audio: f("lego_audio"),
+    notes: f("notes"),
   };
 
   const { error } = await db.from("videos").update(patch).eq("id", videoId);
   if (error) throw new Error(`Could not save Legos: ${error.message}`);
 
+  // Notes alone count as filled: a pile of raw thinking is real content, and
+  // the slot shouldn't read empty just because it isn't sorted into fields yet.
   await markFilled(videoId, "legos", Object.values(patch).some(Boolean));
   touch(videoId);
 }
