@@ -1,0 +1,17 @@
+# Normalise to LF in the repository and on checkout, regardless of the
+# machine's core.autocrlf. Without this, cloning on Windows rewrites every
+# file to CRLF and the next commit shows whole-file diffs.
+* text=auto eol=lf
+
+# SQL and shell content must stay LF — psql heredocs and scripts break on CRLF.
+*.sql   text eol=lf
+*.sh    text eol=lf
+
+# Binaries: never touch.
+*.ico   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.woff  binary
+*.woff2 binary
