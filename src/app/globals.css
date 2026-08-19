@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0b0b0d;
+  --color-surface: #141417;
+  --color-surface-2: #1c1c21;
+  --color-border: #2a2a31;
+  --color-border-soft: #202027;
+  --color-ink: #ededf0;
+  --color-ink-dim: #9b9ba6;
+  --color-ink-faint: #6b6b78;
+  --color-accent: #d8b25f;
+  --color-accent-dim: #8a7238;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+html {
+  background: var(--color-bg);
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Rendered component bodies are markdown-ish plain text; keep the shape of
+   lists and tables readable without pulling in a markdown renderer in v1. */
+.prose-body {
+  white-space: pre-wrap;
+  line-height: 1.65;
+}
+
+::selection {
+  background: var(--color-accent-dim);
+  color: #fff;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+textarea {
+  field-sizing: content;
+}
