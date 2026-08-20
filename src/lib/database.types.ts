@@ -290,6 +290,59 @@ export type Database = {
         }
         Relationships: []
       }
+      plan_goals: {
+        Row: {
+          created_at: string
+          month: string
+          note: string | null
+          target_posts: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          month: string
+          note?: string | null
+          target_posts?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          month?: string
+          note?: string | null
+          target_posts?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      plan_pillar_targets: {
+        Row: {
+          created_at: string
+          month: string
+          pillar: string
+          target_count: number
+        }
+        Insert: {
+          created_at?: string
+          month: string
+          pillar: string
+          target_count?: number
+        }
+        Update: {
+          created_at?: string
+          month?: string
+          pillar?: string
+          target_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plan_pillar_targets_month_fkey"
+            columns: ["month"]
+            isOneToOne: false
+            referencedRelation: "plan_goals"
+            referencedColumns: ["month"]
+          },
+        ]
+      }
       script_beats: {
         Row: {
           created_at: string
@@ -655,6 +708,8 @@ export type Database = {
           lego_visual_format: string | null
           loop_type: string | null
           notes: string | null
+          pillar: string | null
+          planned_publish_at: string | null
           platform: string | null
           platform_video_id: string | null
           published_at: string | null
@@ -678,6 +733,8 @@ export type Database = {
           lego_visual_format?: string | null
           loop_type?: string | null
           notes?: string | null
+          pillar?: string | null
+          planned_publish_at?: string | null
           platform?: string | null
           platform_video_id?: string | null
           published_at?: string | null
@@ -701,6 +758,8 @@ export type Database = {
           lego_visual_format?: string | null
           loop_type?: string | null
           notes?: string | null
+          pillar?: string | null
+          planned_publish_at?: string | null
           platform?: string | null
           platform_video_id?: string | null
           published_at?: string | null
@@ -734,6 +793,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      plan_month: {
+        Row: {
+          month: string | null
+          pending: number | null
+          planned: number | null
+          published: number | null
+          target_posts: number | null
+          unfilled: number | null
+        }
+        Relationships: []
+      }
+      plan_pillar_mix: {
+        Row: {
+          month: string | null
+          pillar: string | null
+          published: number | null
+          scheduled: number | null
+          target_count: number | null
+        }
+        Relationships: []
       }
       video_completeness: {
         Row: {
