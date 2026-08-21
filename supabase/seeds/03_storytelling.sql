@@ -267,12 +267,18 @@ on conflict (source_id) do nothing;
 -- New workbench slots for the new layers. Not in the default template — add
 -- them per build from the completeness panel when a video needs them.
 -- ---------------------------------------------------------------------------
-insert into slots (key, label, layer_id, description, in_default_template, sort_order) values
-  ('format',        'Format',        'format',        'What kind of video this is (20 options).',              false, 15),
-  ('visual_layout', 'Visual layout', 'visual_layout', 'How the frame is composed and shot (31 options).',      false, 35),
-  ('visual_hook',   'Visual hook',   'visual_hook',   'What the first frame does (47 options).',               false, 22),
-  ('spoken_hook',   'Spoken hook',   'spoken_hook',   'What the first line does (13 formats).',                false, 23),
-  ('hook_modifier', 'Hook modifiers','hook_modifier', 'Stacked on top of the hook to make it harder to skip.', false, 24),
-  ('story_format',  'Story format',  'story_format',  'The narrative shape, with plug-and-play templates.',    false, 45),
-  ('story_loop',    'Story loop',    'story_loop',    'Stakes → big question → head fake → rehook.',           false, 46)
+-- The split here is what the slot DECIDES, not what it is named after. A spoken
+-- hook is words, so it is written; a visual hook is a shot, so it is executed —
+-- even though both are "the hook". Getting this wrong is what puts editing
+-- controls in front of someone trying to write a sentence.
+insert into slots (key, label, layer_id, description, in_default_template, sort_order, workflow_stage) values
+  ('format',        'Format',        'format',        'What kind of video this is (20 options).',              true,  15, 'make'),
+  -- On the default template because they ARE the edit vocabulary. Without them
+  -- EDIT opens onto five editing principles and nothing to actually choose.
+  ('visual_layout', 'Visual layout', 'visual_layout', 'How the frame is composed and shot (31 options).',      true,  35, 'edit'),
+  ('visual_hook',   'Visual hook',   'visual_hook',   'What the first frame does (47 options).',               true,  22, 'edit'),
+  ('spoken_hook',   'Spoken hook',   'spoken_hook',   'What the first line does (13 formats).',                true,  23, 'make'),
+  ('hook_modifier', 'Hook modifiers','hook_modifier', 'Stacked on top of the hook to make it harder to skip.', true,  24, 'make'),
+  ('story_format',  'Story format',  'story_format',  'The narrative shape, with plug-and-play templates.',    true,  45, 'make'),
+  ('story_loop',    'Story loop',    'story_loop',    'Stakes → big question → head fake → rehook.',           true,  46, 'make')
 on conflict (key) do nothing;

@@ -430,18 +430,24 @@ on conflict (source_id) do nothing;
 -- `in_default_template` is the counterweight to "everything is optional":
 -- a new video starts with an opinion instead of a blank page.
 -- ---------------------------------------------------------------------------
-insert into slots (key, label, layer_id, description, in_default_template, sort_order) values
-  ('legos',        'Idea Legos',       'lego',         'The seven fields that describe this video.',          true,  10),
-  ('hook',         'Hook',             'hook',         'The opening line and its word types.',                true,  20),
-  ('loop_type',    'Desire / Interest','packaging',    'Which loop is this video running? Decide before writing the hook.', true, 30),
-  ('script',       'Script',           'script',       'Beat-structured script.',                             true,  40),
-  ('retention',    'Retention hacks',  'hack',         'Which hacks are planted, and where.',                 true,  50),
-  ('checkpoints',  'Checkpoints',      'checkpoint',   'Which psychology gates the opening passes through.',  true,  60),
-  ('packaging',    'Title & thumbnail','thumbnail',    'Composition, visual choice, text.',                   true,  70),
-  ('engagement',   'Engagement',       'engagement',   'Three Comments Test and target emotions.',            true,  80),
-  ('story',        'Story devices',    'story',        'Narrative devices in play.',                          false, 90),
-  ('edit',         'Edit pass',        'edit',         'Edit steps and spec.',                                false, 100),
-  ('distribution', 'Distribution',     'distribution', 'Per-platform tactics for this video.',                false, 110)
+-- `workflow_stage` routes the slot to a workspace: MAKE is what the video says,
+-- EDIT is how it is assembled, shared belongs to neither. Migration 0008 adds
+-- the column; the values live here because on a fresh reset the migration's
+-- UPDATEs run before these rows exist.
+insert into slots (key, label, layer_id, description, in_default_template, sort_order, workflow_stage) values
+  ('legos',        'Idea Legos',       'lego',         'The seven fields that describe this video.',          true,  10,  'make'),
+  ('hook',         'Hook',             'hook',         'The opening line and its word types.',                true,  20,  'make'),
+  ('loop_type',    'Desire / Interest','packaging',    'Which loop is this video running? Decide before writing the hook.', true, 30, 'make'),
+  ('script',       'Script',           'script',       'Beat-structured script.',                             true,  40,  'make'),
+  ('retention',    'Retention hacks',  'hack',         'Which hacks are planted, and where.',                 true,  50,  'make'),
+  ('checkpoints',  'Checkpoints',      'checkpoint',   'Which psychology gates the opening passes through.',  true,  60,  'make'),
+  ('packaging',    'Title & thumbnail','thumbnail',    'Composition, visual choice, text.',                   true,  70,  'shared'),
+  ('engagement',   'Engagement',       'engagement',   'Three Comments Test and target emotions.',            true,  80,  'shared'),
+  ('story',        'Story devices',    'story',        'Narrative devices in play.',                          true,  90,  'make'),
+  -- Now on the default template: EDIT is a workspace of its own, and a new
+  -- video that opts into no edit slots would open it to an empty screen.
+  ('edit',         'Edit pass',        'edit',         'Edit steps and spec.',                                true,  100, 'edit'),
+  ('distribution', 'Distribution',     'distribution', 'Per-platform tactics for this video.',                false, 110, 'shared')
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------

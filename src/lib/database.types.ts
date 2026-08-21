@@ -349,8 +349,10 @@ export type Database = {
           function_component_id: string | null
           function_label: string | null
           id: string
+          parked: boolean
           script_id: string
           sort_order: number
+          story_section: string | null
           t_end_sec: number | null
           t_start_sec: number | null
           text: string | null
@@ -361,8 +363,10 @@ export type Database = {
           function_component_id?: string | null
           function_label?: string | null
           id?: string
+          parked?: boolean
           script_id: string
           sort_order?: number
+          story_section?: string | null
           t_end_sec?: number | null
           t_start_sec?: number | null
           text?: string | null
@@ -373,8 +377,10 @@ export type Database = {
           function_component_id?: string | null
           function_label?: string | null
           id?: string
+          parked?: boolean
           script_id?: string
           sort_order?: number
+          story_section?: string | null
           t_end_sec?: number | null
           t_start_sec?: number | null
           text?: string | null
@@ -469,6 +475,7 @@ export type Database = {
           layer_id: string | null
           sort_order: number
           updated_at: string
+          workflow_stage: string
         }
         Insert: {
           created_at?: string
@@ -479,6 +486,7 @@ export type Database = {
           layer_id?: string | null
           sort_order?: number
           updated_at?: string
+          workflow_stage?: string
         }
         Update: {
           created_at?: string
@@ -489,6 +497,7 @@ export type Database = {
           layer_id?: string | null
           sort_order?: number
           updated_at?: string
+          workflow_stage?: string
         }
         Relationships: [
           {
@@ -502,6 +511,7 @@ export type Database = {
       }
       video_components: {
         Row: {
+          anchor_beat_id: string | null
           component_id: string
           created_at: string
           id: string
@@ -513,6 +523,7 @@ export type Database = {
           video_id: string
         }
         Insert: {
+          anchor_beat_id?: string | null
           component_id: string
           created_at?: string
           id?: string
@@ -524,6 +535,7 @@ export type Database = {
           video_id: string
         }
         Update: {
+          anchor_beat_id?: string | null
           component_id?: string
           created_at?: string
           id?: string
@@ -535,6 +547,13 @@ export type Database = {
           video_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "video_components_anchor_beat_id_fkey"
+            columns: ["anchor_beat_id"]
+            isOneToOne: false
+            referencedRelation: "script_beats"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "video_components_component_id_fkey"
             columns: ["component_id"]
