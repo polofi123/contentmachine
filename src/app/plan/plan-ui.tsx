@@ -221,6 +221,29 @@ export function PillarMix({
 
 /* -------------------------------------------------------------- month grid */
 
+// MAKE reads solid, EDIT reads faint — the writing has to exist before the
+// edit plan means anything, so the two are not equal weight at a glance.
+function ReadinessBar({
+  filled,
+  total,
+  faint = false,
+}: {
+  filled: number;
+  total: number;
+  faint?: boolean;
+}) {
+  return (
+    <span className={`mt-0.5 flex gap-[1px] ${faint ? "opacity-50" : ""}`}>
+      {Array.from({ length: total }).map((_, k) => (
+        <span
+          key={k}
+          className={`h-[2px] flex-1 rounded-full ${k < filled ? "bg-current" : "bg-border"}`}
+        />
+      ))}
+    </span>
+  );
+}
+
 type Entry = {
   id: string;
   title: string;
@@ -229,6 +252,8 @@ type Entry = {
   day: string;
   filled: number;
   total: number;
+  make: { filled: number; total: number };
+  edit: { filled: number; total: number };
 };
 
 export function MonthGrid({
@@ -311,24 +336,20 @@ export function MonthGrid({
                     href={`/videos/${e.id}`}
                     className="block rounded border px-1 py-0.5 text-[10px] leading-tight hover:brightness-125"
                     style={pillarStyle(e.pillar)}
-                    title={`${e.title}${e.total ? ` — ${e.filled}/${e.total} ready` : ""}`}
+                    title={`${e.title}${
+                      e.total
+                        ? ` — MAKE ${e.make.filled}/${e.make.total} · EDIT ${e.edit.filled}/${e.edit.total}`
+                        : ""
+                    }`}
                   >
                     <span className="line-clamp-2">{e.title}</span>
                     {/* Readiness on the calendar is the point: a video going
                         out Friday at 1/8 is visible as a risk today, not on
-                        Friday. */}
-                    {e.total > 0 && (
-                      <span className="mt-0.5 flex gap-[1px]">
-                        {Array.from({ length: e.total }).map((_, k) => (
-                          <span
-                            key={k}
-                            className={`h-[2px] flex-1 rounded-full ${
-                              k < e.filled ? "bg-current" : "bg-border"
-                            }`}
-                          />
-                        ))}
-                      </span>
-                    )}
+                        Friday. Two bars rather than one because written-but-
+                        unplanned and planned-but-unwritten are the same number
+                        and completely different problems. */}
+                    {e.make.total > 0 && <ReadinessBar {...e.make} />}
+                    {e.edit.total > 0 && <ReadinessBar {...e.edit} faint />}
                   </Link>
                   {e.status !== "published" && (
                     <form action={markPublished}>

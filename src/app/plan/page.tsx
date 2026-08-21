@@ -48,22 +48,50 @@ export default async function PlanPage({ searchParams }: PageProps<"/plan">) {
     ]);
 
   const ids = (scheduled ?? []).map((v) => v.id);
-  const { data: completeness } = ids.length
-    ? await db.from("video_completeness").select("video_id, filled_slots, total_slots").in("video_id", ids)
+
+  // Split by workspace, because "3/9 ready" hides which half is missing. A
+  // video that is written but not planned out and one that is planned but
+  // unwritten are the same number and completely different problems on a
+  // Thursday. Same rows as video_completeness — only partitioned.
+  const { data: stageRows } = ids.length
+    ? await db
+        .from("video_slots")
+        .select("video_id, state, slots!inner(workflow_stage)")
+        .in("video_id", ids)
     : { data: [] };
 
-  const comp = new Map((completeness ?? []).map((c) => [c.video_id, c] as const));
+  type Tally = { filled: number; total: number };
+  const zero = (): Tally => ({ filled: 0, total: 0 });
+  const stages = new Map<string, { make: Tally; edit: Tally; all: Tally }>();
+
+  for (const row of stageRows ?? []) {
+    const entry = stages.get(row.video_id) ?? { make: zero(), edit: zero(), all: zero() };
+    const stage = (row.slots as { workflow_stage: string } | null)?.workflow_stage;
+    const filled = row.state === "filled";
+
+    entry.all.total += 1;
+    if (filled) entry.all.filled += 1;
+
+    if (stage === "make" || stage === "edit") {
+      entry[stage].total += 1;
+      if (filled) entry[stage].filled += 1;
+    }
+
+    stages.set(row.video_id, entry);
+  }
 
   const entries = (scheduled ?? []).map((v) => {
-    const c = comp.get(v.id);
+    const s = stages.get(v.id);
     return {
       id: v.id,
       title: v.title,
       status: v.status,
       pillar: v.pillar,
       day: v.planned_publish_at as string,
-      filled: c?.filled_slots ?? 0,
-      total: c?.total_slots ?? 0,
+      filled: s?.all.filled ?? 0,
+      total: s?.all.total ?? 0,
+      make: s?.make ?? zero(),
+      edit: s?.edit ?? zero(),
     };
   });
 
