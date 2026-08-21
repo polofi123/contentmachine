@@ -19,7 +19,7 @@ import { Tray, type TrayComponent } from "./tray";
 import { Diagnostics } from "./diagnostics";
 import {
   beatFromText,
-  createBeat,
+  createBeats,
   ensureScript,
   parkBeat,
   plantComponent,
@@ -61,6 +61,68 @@ const emptyBeat = (): WorkspaceBeat => ({
 });
 
 /**
+ * What a new script already knows.
+ *
+ * A blank page is not neutral — it quietly asks you to remember the whole
+ * framework before you can write a word. Parts of the theory apply to every
+ * short, so they are here from the start: SCR-03's opening, the Core Loop
+ * through the middle, a payoff and a CTA at the end.
+ *
+ * It is a scaffold, not a contract. Lines are deletable, reorderable and
+ * relabelable, and nothing is written to the database until the first character
+ * is typed — open a video and change your mind and no draft is left behind.
+ */
+const SKELETON: { label: string; section: StorySection }[] = [
+  { label: "Hook", section: "start" },
+  { label: "Foreshadow", section: "start" },
+  { label: "Transition", section: "start" },
+  { label: "Stakes", section: "middle" },
+  { label: "Big question", section: "middle" },
+  { label: "Head fake", section: "middle" },
+  { label: "Rehook", section: "middle" },
+  { label: "Payoff", section: "end" },
+  { label: "CTA", section: "end" },
+];
+
+export const skeletonBeats = (): WorkspaceBeat[] =>
+  SKELETON.map((s) => ({
+    ...emptyBeat(),
+    story_section: s.section,
+    function_label: s.label,
+  }));
+
+/**
+ * Short form is one thought per line, so a pasted paragraph should arrive as
+ * lines rather than a wall.
+ *
+ * Deliberately conservative: it only breaks when a sentence ends AND the next
+ * one visibly begins, which leaves "3.5", "e.g." and "Mr. Beast" alone. Missing
+ * a split is recoverable in a keystroke; wrongly cutting someone's sentence in
+ * half is just annoying.
+ */
+const ABBREVIATION =
+  /(?:\b(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|etc|approx|dept|fig|no|e\.g|i\.e)|\b[A-Z])\.$/i;
+
+export function splitSentences(text: string): string[] {
+  const rough = text
+    .split(/(?<=[.!?…])\s+(?=["'“‘(]?[A-Z0-9])/u)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // Stitch back the places where the full stop was not the end of anything:
+  // "Mr. Beast", "e.g. this", "J. K. Rowling". Decimals never reach here — a
+  // split needs whitespace after the stop, and "3.5" has none.
+  const out: string[] = [];
+  for (const piece of rough) {
+    const last = out[out.length - 1];
+    if (last && ABBREVIATION.test(last)) out[out.length - 1] = `${last} ${piece}`;
+    else out.push(piece);
+  }
+
+  return out;
+}
+
+/**
  * MAKE: the script and the loose bricks beside it, under one drag context.
  *
  * Everything else in this app is a <form> posting to a server action, which is
@@ -100,15 +162,19 @@ export function Workspace({
   trayComponents: TrayComponent[];
   targetSec: number | null;
 }) {
+  // A script that has never been written into opens on the skeleton rather than
+  // a blank line. Nothing is saved until the first character is typed.
   const [beats, setBeats] = useState<WorkspaceBeat[]>(
-    initialBeats.length > 0 ? initialBeats : [emptyBeat()],
+    initialBeats.length > 0 ? initialBeats : skeletonBeats(),
   );
   const [pile, setPile] = useState<PileItem[]>(initialPile);
   const [premise, setPremise] = useState(initialPremise);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [focusTarget, setFocusTarget] = useState<{ id: string; caret: "start" | "end" } | null>(
-    null,
-  );
+  const [focusTarget, setFocusTarget] = useState<{
+    id: string;
+    caret: "start" | "end" | "at";
+    offset?: number;
+  } | null>(null);
   /** Which line the slash palette is open on, if any. */
   const [paletteFor, setPaletteFor] = useState<string | null>(null);
 
@@ -147,15 +213,30 @@ export function Workspace({
     return scriptPromise.current;
   }, [videoId]);
 
-  const persist = useCallback(
-    async (beat: WorkspaceBeat, orderedIds: string[]) => {
-      if (persisted.current.has(beat.id)) return;
-      persisted.current.add(beat.id);
+  /**
+   * Write down every line that isn't in the database yet.
+   *
+   * Takes the whole list rather than one beat because of the skeleton: the
+   * first character typed into line 4 has to bring lines 1-3 with it, or the
+   * running order and the labels arrive in pieces.
+   */
+  const persistPending = useCallback(
+    async (all: WorkspaceBeat[], orderedIds: string[]) => {
+      const pending = all.filter((b) => !persisted.current.has(b.id));
+      if (pending.length === 0) return;
+
+      pending.forEach((b) => persisted.current.add(b.id));
       const scriptId = await getScriptId();
-      await createBeat(
+
+      await createBeats(
         videoId,
         scriptId,
-        { id: beat.id, text: beat.text, story_section: beat.story_section },
+        pending.map((b) => ({
+          id: b.id,
+          text: b.text,
+          story_section: b.story_section,
+          function_label: b.function_label,
+        })),
         orderedIds,
       );
     },
@@ -167,7 +248,12 @@ export function Workspace({
     const el = inputs.current.get(focusTarget.id);
     if (!el) return;
     el.focus();
-    const pos = focusTarget.caret === "start" ? 0 : el.value.length;
+    const pos =
+      focusTarget.caret === "start"
+        ? 0
+        : focusTarget.caret === "at"
+          ? Math.min(focusTarget.offset ?? 0, el.value.length)
+          : el.value.length;
     el.setSelectionRange(pos, pos);
     setFocusTarget(null);
   }, [focusTarget, beats]);
@@ -177,17 +263,19 @@ export function Workspace({
     return () => timers.forEach((t) => clearTimeout(t));
   }, []);
 
-  const scheduleSave = (beat: WorkspaceBeat, text: string, orderedIds: string[]) => {
-    const existing = saveTimers.current.get(beat.id);
+  const scheduleSave = (beatId: string, text: string, all: WorkspaceBeat[]) => {
+    const existing = saveTimers.current.get(beatId);
     if (existing) clearTimeout(existing);
 
+    const orderedIds = all.map((b) => b.id);
+
     saveTimers.current.set(
-      beat.id,
+      beatId,
       setTimeout(() => {
-        saveTimers.current.delete(beat.id);
+        saveTimers.current.delete(beatId);
         enqueue(async () => {
-          await persist({ ...beat, text }, orderedIds);
-          await saveBeatText(beat.id, text);
+          await persistPending(all, orderedIds);
+          await saveBeatText(beatId, text);
         });
       }, SAVE_DEBOUNCE_MS),
     );
@@ -196,51 +284,109 @@ export function Workspace({
   const handleChange = (index: number, text: string) => {
     const next = beats.map((b, i) => (i === index ? { ...b, text } : b));
     setBeats(next);
-    scheduleSave(
-      next[index],
-      text,
-      next.map((b) => b.id),
-    );
+    scheduleSave(next[index].id, text, next);
   };
 
-  const insertAfter = (index: number) => {
+  /**
+   * Enter splits the line at the caret and takes the rest of the sentence with
+   * it. Pressing it at the end of a line is just the special case where there
+   * is nothing after the caret to carry down.
+   */
+  const splitAt = (index: number, caret: number) => {
+    const current = beats[index];
+    const before = current.text.slice(0, caret);
+    const after = current.text.slice(caret);
+
     const beat = emptyBeat();
+    beat.text = after;
     // A new line continues the section it was written inside — the writer is
     // still in the middle, so asking again would be noise.
-    beat.story_section = beats[index]?.story_section ?? null;
+    beat.story_section = current.story_section;
 
-    const next = [...beats.slice(0, index + 1), beat, ...beats.slice(index + 1)];
+    const next = [
+      ...beats.slice(0, index),
+      { ...current, text: before },
+      beat,
+      ...beats.slice(index + 1),
+    ];
+
     setBeats(next);
-    setFocusTarget({ id: beat.id, caret: "end" });
+    setFocusTarget({ id: beat.id, caret: "start" });
 
     const orderedIds = next.map((b) => b.id);
     enqueue(async () => {
-      await persist(beats[index], orderedIds);
-      await persist(beat, orderedIds);
+      await persistPending(next, orderedIds);
+      await saveBeatText(current.id, before);
+      if (after) await saveBeatText(beat.id, after);
     });
   };
 
-  const deleteAt = (index: number) => {
-    if (beats.length === 1) return;
-    const doomed = beats[index];
-    const next = beats.filter((_, i) => i !== index);
+  /** Backspace at the start of a line puts it back on the end of the one above. */
+  const mergeUp = (index: number) => {
+    if (index === 0) return;
+    const prev = beats[index - 1];
+    const current = beats[index];
+    const joined = prev.text + current.text;
+
+    const next = beats
+      .map((b, i) => (i === index - 1 ? { ...b, text: joined } : b))
+      .filter((_, i) => i !== index);
+
+    setBeats(next);
+    setFocusTarget({ id: prev.id, caret: "at", offset: prev.text.length });
+
+    const timer = saveTimers.current.get(current.id);
+    if (timer) clearTimeout(timer);
+    saveTimers.current.delete(current.id);
+
+    const orderedIds = next.map((b) => b.id);
+    const wasPersisted = persisted.current.has(current.id);
+    persisted.current.delete(current.id);
+
+    enqueue(async () => {
+      await persistPending(next, orderedIds);
+      await saveBeatText(prev.id, joined);
+      if (wasPersisted) {
+        const scriptId = await getScriptId();
+        await removeBeat(videoId, scriptId, current.id, orderedIds);
+      }
+    });
+  };
+
+  /** A pasted paragraph arrives as lines, because short form is one per line. */
+  const pasteInto = (index: number, caret: number, pasted: string) => {
+    const pieces = splitSentences(pasted);
+    if (pieces.length < 2) return false;
+
+    const current = beats[index];
+    const before = current.text.slice(0, caret);
+    const after = current.text.slice(caret);
+
+    const made = pieces.map((text, i) => {
+      const beat = emptyBeat();
+      beat.story_section = current.story_section;
+      beat.text = i === 0 ? before + text : text;
+      return beat;
+    });
+
+    // The tail of the line the paste landed in rides on the last new line.
+    made[made.length - 1].text += after;
+    // The first piece keeps the original row so its label and history survive.
+    made[0] = { ...current, text: made[0].text };
+
+    const next = [...beats.slice(0, index), ...made, ...beats.slice(index + 1)];
     setBeats(next);
 
-    const prev = next[Math.max(0, index - 1)];
-    if (prev) setFocusTarget({ id: prev.id, caret: "end" });
-
-    const timer = saveTimers.current.get(doomed.id);
-    if (timer) clearTimeout(timer);
-    saveTimers.current.delete(doomed.id);
-
-    if (!persisted.current.has(doomed.id)) return;
-    persisted.current.delete(doomed.id);
+    const last = made[made.length - 1];
+    setFocusTarget({ id: last.id, caret: "end" });
 
     const orderedIds = next.map((b) => b.id);
     enqueue(async () => {
-      const scriptId = await getScriptId();
-      await removeBeat(videoId, scriptId, doomed.id, orderedIds);
+      await persistPending(next, orderedIds);
+      for (const b of made) await saveBeatText(b.id, b.text);
     });
+
+    return true;
   };
 
   const commitOrder = (next: WorkspaceBeat[]) => {
@@ -263,19 +409,21 @@ export function Workspace({
     commitOrder(next);
   };
 
-  const cycleSection = (index: number) => {
+  const setSection = (index: number, next: StorySection | null) => {
     const beat = beats[index];
-    const current = (beat.story_section ?? null) as StorySection | null;
-    const next = SECTION_CYCLE[(SECTION_CYCLE.indexOf(current) + 1) % SECTION_CYCLE.length];
-
     const updated = beats.map((b, i) => (i === index ? { ...b, story_section: next } : b));
     setBeats(updated);
 
     const orderedIds = updated.map((b) => b.id);
     enqueue(async () => {
-      await persist({ ...beat, story_section: next }, orderedIds);
+      await persistPending(updated, orderedIds);
       await setBeatSection(videoId, beat.id, next);
     });
+  };
+
+  const cycleSection = (index: number) => {
+    const current = (beats[index].story_section ?? null) as StorySection | null;
+    setSection(index, SECTION_CYCLE[(SECTION_CYCLE.indexOf(current) + 1) % SECTION_CYCLE.length]);
   };
 
   /** Set a line aside without losing it. */
@@ -353,7 +501,7 @@ export function Workspace({
     const orderedIds = beats.map((b) => b.id);
     enqueue(async () => {
       // A line that was never saved cannot carry a technique yet.
-      await persist(beat, orderedIds);
+      await persistPending(beats, orderedIds);
       await plantComponent(videoId, beatId, component.id, component.name);
     });
   };
@@ -388,15 +536,26 @@ export function Workspace({
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      insertAfter(index);
+      splitAt(index, el.selectionStart);
       return;
     }
 
     if (e.key === "Backspace" && el.selectionStart === 0 && el.selectionEnd === 0) {
-      if (el.value === "") {
+      if (index > 0) {
         e.preventDefault();
-        deleteAt(index);
+        mergeUp(index);
       }
+      return;
+    }
+
+    // Sections on the keyboard, same modifier as reordering. Writing and
+    // structuring should not require reaching for the mouse in between.
+    if (e.altKey && ["1", "2", "3", "0"].includes(e.key)) {
+      e.preventDefault();
+      const target = ({ "1": "start", "2": "middle", "3": "end", "0": null } as const)[
+        e.key as "1" | "2" | "3" | "0"
+      ];
+      setSection(index, target);
       return;
     }
 
@@ -514,6 +673,12 @@ export function Workspace({
                     }}
                     onChange={(text) => handleChange(index, text)}
                     onKeyDown={(e) => onKeyDown(e, index)}
+                    onPasteText={(e) => {
+                      const pasted = e.clipboardData.getData("text/plain");
+                      if (pasteInto(index, e.currentTarget.selectionStart, pasted)) {
+                        e.preventDefault();
+                      }
+                    }}
                     onCycleSection={() => cycleSection(index)}
                     onPark={() => park(index)}
                     onUnplant={() => unplant(beat.id)}
@@ -585,6 +750,7 @@ function BeatRow({
   registerInput,
   onChange,
   onKeyDown,
+  onPasteText,
   onCycleSection,
   onPark,
   onUnplant,
@@ -596,6 +762,7 @@ function BeatRow({
   registerInput: (el: HTMLTextAreaElement | null) => void;
   onChange: (text: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onPasteText: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
   onCycleSection: () => void;
   onPark: () => void;
   onUnplant: () => void;
@@ -642,8 +809,15 @@ function BeatRow({
             onChange(e.target.value);
           }}
           onKeyDown={onKeyDown}
+          onPaste={onPasteText}
           rows={1}
-          placeholder={index === 0 ? "Write one thought…" : ""}
+          placeholder={
+            beat.function_label
+              ? `${beat.function_label}…`
+              : index === 0
+                ? "Write one thought…"
+                : ""
+          }
           className="min-w-0 flex-1 resize-none overflow-hidden bg-transparent py-1.5 text-sm leading-relaxed text-ink outline-none placeholder:text-ink-faint"
         />
 

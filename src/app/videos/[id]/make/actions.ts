@@ -18,6 +18,7 @@ export type NewBeat = {
   id: string;
   text: string;
   story_section: string | null;
+  function_label?: string | null;
 };
 
 /**
@@ -95,15 +96,38 @@ export async function createBeat(
   beat: NewBeat,
   orderedIds: string[],
 ) {
-  const { error } = await db.from("script_beats").insert({
-    id: beat.id,
-    script_id: scriptId,
-    sort_order: orderedIds.indexOf(beat.id) + 1,
-    text: beat.text || null,
-    story_section: beat.story_section,
-  });
+  await createBeats(videoId, scriptId, [beat], orderedIds);
+}
 
-  if (error) throw new Error(`Could not add beat: ${error.message}`);
+/**
+ * Several lines at once, inserted then ordered in two round trips rather than
+ * two per line.
+ *
+ * This is how the opening skeleton lands. A new script shows the structure
+ * immediately, but nothing is written until the first character is typed — at
+ * which point the whole scaffold materialises together, so the labels and the
+ * running order arrive as one thing rather than nine racing inserts.
+ */
+export async function createBeats(
+  videoId: string,
+  scriptId: string,
+  beats: NewBeat[],
+  orderedIds: string[],
+) {
+  if (beats.length === 0) return;
+
+  const { error } = await db.from("script_beats").insert(
+    beats.map((b) => ({
+      id: b.id,
+      script_id: scriptId,
+      sort_order: orderedIds.indexOf(b.id) + 1,
+      text: b.text || null,
+      story_section: b.story_section,
+      function_label: b.function_label ?? null,
+    })),
+  );
+
+  if (error) throw new Error(`Could not add beats: ${error.message}`);
 
   await reorderBeats(scriptId, orderedIds);
   await markFilled(videoId, "script", true);
