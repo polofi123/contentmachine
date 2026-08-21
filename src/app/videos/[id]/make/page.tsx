@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { loadScript, loadSlots, running } from "../data";
 import { SlotStack } from "../slot-stack";
-import { Workspace, type WorkspaceBeat } from "./workspace";
+import { LABEL_TEACHES, WORD_TAGGABLE } from "../lego-options";
+import { Workspace, type WorkspaceBeat, type GuideComponent, type BeatTag } from "./workspace";
 import type { PileItem } from "./pile";
 import type { PaletteComponent } from "./palette";
 import type { TrayComponent } from "./tray";
@@ -31,7 +32,7 @@ export default async function MakePage({ params }: PageProps<"/videos/[id]/make"
         .limit(20),
       db
         .from("components")
-        .select("id, source_id, name, layer_id, is_placeholder, sort_order")
+        .select("id, source_id, name, body, layer_id, parent_id, is_placeholder, sort_order")
         .is("archived_at", null)
         .order("sort_order"),
       db.from("layers").select("id, label, sort_order").order("sort_order"),
@@ -127,6 +128,47 @@ export default async function MakePage({ params }: PageProps<"/videos/[id]/make"
       s.layer_id !== "checkpoint",
   );
 
+  // Only the components the guide can actually reach: what the scaffold labels
+  // point at, their children, the hook-word types, and anything a line has been
+  // relabelled to. Shipping all 262 bodies to the browser to show one at a time
+  // would be most of a megabyte for nothing.
+  const teachSources = new Set(Object.values(LABEL_TEACHES));
+  const taggableLayers = new Set(Object.values(WORD_TAGGABLE));
+  const linked = new Set(script.beats.map((b) => b.function_component_id).filter(Boolean));
+
+  const roots = (components ?? []).filter(
+    (c) =>
+      (c.source_id && teachSources.has(c.source_id)) ||
+      linked.has(c.id) ||
+      (c.layer_id && taggableLayers.has(c.layer_id)),
+  );
+  const rootIds = new Set(roots.map((c) => c.id));
+
+  const guideComponents: GuideComponent[] = (components ?? [])
+    .filter((c) => rootIds.has(c.id) || (c.parent_id && rootIds.has(c.parent_id)))
+    .map((c) => ({
+      id: c.id,
+      source_id: c.source_id,
+      name: c.name,
+      body: c.body,
+      layer_id: c.layer_id,
+      parent_id: c.parent_id,
+    }));
+
+  const beatIds = script.beats.map((b) => b.id);
+  const { data: tagRows } = beatIds.length
+    ? await db
+        .from("script_beat_tags")
+        .select("id, beat_id, component_id, span_start, span_end, span_text")
+        .in("beat_id", beatIds)
+    : { data: [] };
+
+  const sourceById = new Map((components ?? []).map((c) => [c.id, c.source_id]));
+  const initialTags: BeatTag[] = (tagRows ?? []).map((t) => ({
+    ...t,
+    source_id: sourceById.get(t.component_id) ?? null,
+  }));
+
   return (
     <>
       <Workspace
@@ -138,6 +180,8 @@ export default async function MakePage({ params }: PageProps<"/videos/[id]/make"
         paletteComponents={paletteComponents}
         trayComponents={trayComponents}
         targetSec={script.durationTargetSec}
+        guideComponents={guideComponents}
+        initialTags={initialTags}
       />
 
       {stackSlots.length > 0 && (

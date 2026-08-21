@@ -343,6 +343,58 @@ export type Database = {
           },
         ]
       }
+      script_beat_tags: {
+        Row: {
+          beat_id: string
+          component_id: string
+          created_at: string
+          id: string
+          span_end: number
+          span_start: number
+          span_text: string
+        }
+        Insert: {
+          beat_id: string
+          component_id: string
+          created_at?: string
+          id?: string
+          span_end: number
+          span_start: number
+          span_text: string
+        }
+        Update: {
+          beat_id?: string
+          component_id?: string
+          created_at?: string
+          id?: string
+          span_end?: number
+          span_start?: number
+          span_text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "script_beat_tags_beat_id_fkey"
+            columns: ["beat_id"]
+            isOneToOne: false
+            referencedRelation: "script_beats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "script_beat_tags_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "component_performance"
+            referencedColumns: ["component_id"]
+          },
+          {
+            foreignKeyName: "script_beat_tags_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "components"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       script_beats: {
         Row: {
           created_at: string

@@ -32,6 +32,49 @@ export type LegoOption = { id: string; name: string; group: string };
  *
  * Topic, angle and audio have no seeded vocabulary, so they stay plain boxes.
  */
+/**
+ * The six hook words, in the colours the framework draws them in.
+ *
+ * Keyed by source_id rather than name so renaming a component in /library — the
+ * whole point of source_id — does not silently drop its colour.
+ *
+ * Values are literal hex rather than theme tokens because these ARE the
+ * framework's own colours, not this app's palette; they should read the same
+ * here as they do on the sheet they came from.
+ */
+export const WORD_TYPE_COLORS: Record<string, string> = {
+  "HOOKW-01": "#d98cc8", // Subject Clarity
+  "HOOKW-02": "#e59a86", // Action
+  "HOOKW-03": "#c9a86a", // Objective / End State
+  "HOOKW-04": "#6fbf9f", // Contrast
+  "HOOKW-05": "#9b8cd9", // Time
+  "HOOKW-06": "#7fb2d9", // Proof
+};
+
+/**
+ * What a line teaches when the caret is inside it.
+ *
+ * Keyed by the label the skeleton gives a line. Relabelling a line through the
+ * slash palette links a real component, which wins over this table — this is
+ * the fallback for the scaffold's own free-text labels.
+ */
+export const LABEL_TEACHES: Record<string, string> = {
+  hook: "HOOK-02",
+  foreshadow: "SCR-03",
+  transition: "SCR-03",
+  stakes: "LOOP-01",
+  "big question": "LOOP-02",
+  "head fake": "LOOP-03",
+  rehook: "LOOP-04",
+  payoff: "SCR-02",
+  cta: "CTA-01",
+};
+
+/** Lines whose words can be tagged, and the layer of types they tag with. */
+export const WORD_TAGGABLE: Record<string, string> = {
+  hook: "hook_word",
+};
+
 export const LEGO_OPTION_LAYERS: Partial<Record<LegoField, string[]>> = {
   lego_hook: ["hook", "spoken_hook", "visual_hook", "hook_modifier"],
   lego_story_structure: ["story_format", "story_loop", "story"],

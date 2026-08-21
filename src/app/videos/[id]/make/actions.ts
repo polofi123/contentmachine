@@ -321,6 +321,69 @@ export async function cycleTrayComponent(
 }
 
 /**
+ * Mark which words in a line are doing which job.
+ *
+ * Stored rather than drawn, because "did the hooks carrying all four core word
+ * types outperform the ones missing Contrast" is the kind of question this app
+ * exists to answer, and a colour that lives only in the browser can never be
+ * asked anything.
+ */
+export async function addBeatTag(
+  videoId: string,
+  beatId: string,
+  componentId: string,
+  spanStart: number,
+  spanEnd: number,
+  spanText: string,
+) {
+  const { error } = await db.from("script_beat_tags").insert({
+    beat_id: beatId,
+    component_id: componentId,
+    span_start: spanStart,
+    span_end: spanEnd,
+    span_text: spanText,
+  });
+
+  if (error) throw new Error(`Could not tag those words: ${error.message}`);
+  touch(videoId);
+}
+
+export async function removeBeatTag(videoId: string, tagId: string) {
+  const { error } = await db.from("script_beat_tags").delete().eq("id", tagId);
+  if (error) throw new Error(`Could not remove that tag: ${error.message}`);
+  touch(videoId);
+}
+
+/**
+ * Offsets drift when the line is edited, so they are repaired from span_text.
+ * Called after a save, keeping the stored positions honest without asking the
+ * writer to think about it.
+ */
+export async function healBeatTags(beatId: string, text: string) {
+  const { data: tags } = await db
+    .from("script_beat_tags")
+    .select("id, span_start, span_end, span_text")
+    .eq("beat_id", beatId);
+
+  for (const tag of tags ?? []) {
+    if (text.slice(tag.span_start, tag.span_end) === tag.span_text) continue;
+
+    const found = text.indexOf(tag.span_text);
+    if (found === -1) {
+      // The words themselves are gone. The tag is about text that no longer
+      // exists, so keeping it would mislabel whatever moved into its place.
+      await db.from("script_beat_tags").delete().eq("id", tag.id);
+      continue;
+    }
+
+    await db
+      .from("script_beat_tags")
+      .update({ span_start: found, span_end: found + tag.span_text.length })
+      .eq("id", tag.id);
+  }
+}
+
+/**
  * The premise, stored in lego_angle — which is already defined as "What was
  * their take / premise / angle?". A second column would be the same fact twice.
  *

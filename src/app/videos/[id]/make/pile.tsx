@@ -37,17 +37,17 @@ const GROUPS: { kind: PileKind; label: string; hint: string; openByDefault: bool
  * dropped into the script it is a beat, and only the parked ones remember they
  * were ever anything else.
  */
-export function Pile({ items }: { items: PileItem[] }) {
+export function Pile({ items, bare = false }: { items: PileItem[]; bare?: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: "pile-drop", data: { type: "pile" } });
 
   return (
-    <aside
+    <div
       ref={setNodeRef}
-      className={`w-56 shrink-0 rounded-xl border p-3 transition-colors ${
+      className={`rounded-xl border p-3 transition-colors ${bare ? "" : "w-56 shrink-0"} ${
         isOver ? "border-accent-dim bg-accent-dim/5" : "border-border-soft"
       }`}
     >
-      <p className="mb-3 text-[10px] tracking-wide text-ink-dim">IDEA PILE</p>
+      {!bare && <p className="mb-3 text-[10px] tracking-wide text-ink-dim">IDEA PILE</p>}
 
       {GROUPS.map((group) => (
         <PileGroup
@@ -64,7 +64,7 @@ export function Pile({ items }: { items: PileItem[] }) {
           Empty. Drag a line here to set it aside without losing it.
         </p>
       )}
-    </aside>
+    </div>
   );
 }
 

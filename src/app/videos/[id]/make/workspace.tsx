@@ -13,7 +13,9 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { approxSec, totalSec, totalWords } from "@/lib/timing";
-import { Pile, type PileItem } from "./pile";
+import type { PileItem } from "./pile";
+import { Guide, colorFor, type Teaching, type WordType } from "./guide";
+import { LABEL_TEACHES, WORD_TAGGABLE } from "../lego-options";
 import { Palette, type PaletteComponent } from "./palette";
 import { Tray, type TrayComponent } from "./tray";
 import { Diagnostics } from "./diagnostics";
@@ -30,7 +32,29 @@ import {
   setBeatSection,
   unparkBeat,
   unplantComponent,
+  addBeatTag,
+  removeBeatTag,
+  healBeatTags,
 } from "./actions";
+
+export type GuideComponent = {
+  id: string;
+  source_id: string | null;
+  name: string;
+  body: string | null;
+  layer_id: string | null;
+  parent_id: string | null;
+};
+
+export type BeatTag = {
+  id: string;
+  beat_id: string;
+  component_id: string;
+  source_id: string | null;
+  span_start: number;
+  span_end: number;
+  span_text: string;
+};
 
 export type StorySection = "start" | "middle" | "end";
 
@@ -152,6 +176,8 @@ export function Workspace({
   paletteComponents,
   trayComponents,
   targetSec,
+  guideComponents,
+  initialTags,
 }: {
   videoId: string;
   scriptId: string | null;
@@ -161,6 +187,8 @@ export function Workspace({
   paletteComponents: PaletteComponent[];
   trayComponents: TrayComponent[];
   targetSec: number | null;
+  guideComponents: GuideComponent[];
+  initialTags: BeatTag[];
 }) {
   // A script that has never been written into opens on the skeleton rather than
   // a blank line. Nothing is saved until the first character is typed.
@@ -177,6 +205,14 @@ export function Workspace({
   } | null>(null);
   /** Which line the slash palette is open on, if any. */
   const [paletteFor, setPaletteFor] = useState<string | null>(null);
+  const [tags, setTags] = useState<BeatTag[]>(initialTags);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<{
+    beatId: string;
+    start: number;
+    end: number;
+    text: string;
+  } | null>(null);
 
   const inputs = useRef(new Map<string, HTMLTextAreaElement>());
   const saveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -276,6 +312,9 @@ export function Workspace({
         enqueue(async () => {
           await persistPending(all, orderedIds);
           await saveBeatText(beatId, text);
+          // Offsets drift as the line is edited; repair them from the tagged
+          // text so a highlight never ends up underlining the wrong words.
+          await healBeatTags(beatId, text);
         });
       }, SAVE_DEBOUNCE_MS),
     );
@@ -284,7 +323,22 @@ export function Workspace({
   const handleChange = (index: number, text: string) => {
     const next = beats.map((b, i) => (i === index ? { ...b, text } : b));
     setBeats(next);
-    scheduleSave(next[index].id, text, next);
+
+    // Same repair the server does, applied immediately so the underline follows
+    // the words on screen rather than lagging a save behind them.
+    const beatId = next[index].id;
+    setTags((all) =>
+      all.flatMap((t) => {
+        if (t.beat_id !== beatId) return [t];
+        if (text.slice(t.span_start, t.span_end) === t.span_text) return [t];
+        const at = text.indexOf(t.span_text);
+        return at === -1
+          ? []
+          : [{ ...t, span_start: at, span_end: at + t.span_text.length }];
+      }),
+    );
+
+    scheduleSave(beatId, text, next);
   };
 
   /**
@@ -623,6 +677,75 @@ export function Workspace({
     commitOrder(next);
   };
 
+  /* ---------------------------------------------------------------- guide */
+
+  const focused = beats.find((b) => b.id === focusedId) ?? null;
+  const focusLabel = focused?.function_label ?? null;
+  const labelKey = focusLabel?.trim().toLowerCase() ?? "";
+
+  const byId = new Map(guideComponents.map((c) => [c.id, c]));
+  const bySource = new Map(
+    guideComponents.filter((c) => c.source_id).map((c) => [c.source_id as string, c]),
+  );
+
+  // A component linked through the slash palette wins; the scaffold's own
+  // free-text labels fall back to the table.
+  const teachingComponent =
+    (focused?.function_component_id ? byId.get(focused.function_component_id) : null) ??
+    (labelKey ? bySource.get(LABEL_TEACHES[labelKey] ?? "") : null) ??
+    null;
+
+  const teaching: Teaching | null = teachingComponent
+    ? {
+        source_id: teachingComponent.source_id,
+        name: teachingComponent.name,
+        body: teachingComponent.body,
+        children: guideComponents
+          .filter((c) => c.parent_id === teachingComponent.id)
+          .map((c) => ({ id: c.id, source_id: c.source_id, name: c.name, body: c.body })),
+      }
+    : null;
+
+  const taggableLayer = labelKey ? WORD_TAGGABLE[labelKey] : undefined;
+  const wordTypes: WordType[] = taggableLayer
+    ? guideComponents
+        .filter((c) => c.layer_id === taggableLayer)
+        .map((c) => ({ id: c.id, source_id: c.source_id, name: c.name, body: c.body }))
+    : [];
+
+  const activeTags = focused ? tags.filter((t) => t.beat_id === focused.id) : [];
+
+  const tagSelection = (componentId: string) => {
+    if (!selection) return;
+    const { beatId, start, end, text } = selection;
+    const source = guideComponents.find((c) => c.id === componentId)?.source_id ?? null;
+
+    const tag: BeatTag = {
+      id: newId(),
+      beat_id: beatId,
+      component_id: componentId,
+      source_id: source,
+      span_start: start,
+      span_end: end,
+      span_text: text,
+    };
+
+    setTags((all) => [...all, tag]);
+    setSelection(null);
+
+    const orderedIds = beats.map((b) => b.id);
+    enqueue(async () => {
+      // The line has to exist before its words can be labelled.
+      await persistPending(beats, orderedIds);
+      await addBeatTag(videoId, beatId, componentId, start, end, text);
+    });
+  };
+
+  const dropTag = (tagId: string) => {
+    setTags((all) => all.filter((t) => t.id !== tagId));
+    enqueue(() => removeBeatTag(videoId, tagId));
+  };
+
   const words = totalWords(beats);
   const seconds = totalSec(beats);
   const written = beats.filter((b) => b.text.trim()).length;
@@ -682,6 +805,15 @@ export function Workspace({
                     onCycleSection={() => cycleSection(index)}
                     onPark={() => park(index)}
                     onUnplant={() => unplant(beat.id)}
+                    tags={tags.filter((t) => t.beat_id === beat.id)}
+                    onFocusLine={() => setFocusedId(beat.id)}
+                    onSelectRange={(start, end) =>
+                      setSelection(
+                        end > start
+                          ? { beatId: beat.id, start, end, text: beat.text.slice(start, end) }
+                          : null,
+                      )
+                    }
                     palette={
                       paletteFor === beat.id ? (
                         <Palette
@@ -717,7 +849,20 @@ export function Workspace({
           </div>
         </div>
 
-        <Pile items={pile} />
+        <Guide
+          label={focusLabel}
+          teaching={teaching}
+          wordTypes={wordTypes}
+          tags={activeTags.map((t) => ({
+            id: t.id,
+            componentId: t.component_id,
+            text: t.span_text,
+          }))}
+          selection={selection?.text ?? null}
+          onTag={tagSelection}
+          onRemoveTag={dropTag}
+          pile={pile}
+        />
       </div>
     </DndContext>
   );
@@ -735,6 +880,35 @@ function ScriptEnd() {
       }`}
     />
   );
+}
+
+/**
+ * Cut the line into runs, each either plain or carrying a word type's colour.
+ *
+ * Overlaps are resolved by first-come: a span that starts inside one already
+ * being drawn is skipped rather than nested, because two underlines on the same
+ * word cannot both be read anyway.
+ */
+export function underlineSegments(
+  text: string,
+  tags: BeatTag[],
+): { text: string; color?: string }[] {
+  const ordered = [...tags]
+    .filter((t) => t.span_start < text.length && t.span_end <= text.length)
+    .sort((a, b) => a.span_start - b.span_start);
+
+  const out: { text: string; color?: string }[] = [];
+  let cursor = 0;
+
+  for (const tag of ordered) {
+    if (tag.span_start < cursor) continue;
+    if (tag.span_start > cursor) out.push({ text: text.slice(cursor, tag.span_start) });
+    out.push({ text: text.slice(tag.span_start, tag.span_end), color: colorFor(tag.source_id) });
+    cursor = tag.span_end;
+  }
+
+  if (cursor < text.length) out.push({ text: text.slice(cursor) });
+  return out;
 }
 
 const autoGrow = (el: HTMLTextAreaElement | null) => {
@@ -755,6 +929,9 @@ function BeatRow({
   onPark,
   onUnplant,
   palette,
+  tags,
+  onFocusLine,
+  onSelectRange,
 }: {
   beat: WorkspaceBeat;
   index: number;
@@ -767,6 +944,9 @@ function BeatRow({
   onPark: () => void;
   onUnplant: () => void;
   palette: React.ReactNode;
+  tags: BeatTag[];
+  onFocusLine: () => void;
+  onSelectRange: (start: number, end: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: beat.id,
@@ -798,28 +978,65 @@ function BeatRow({
           ≡
         </button>
 
-        <textarea
-          ref={(el) => {
-            registerInput(el);
-            autoGrow(el);
-          }}
-          value={beat.text}
-          onChange={(e) => {
-            autoGrow(e.currentTarget);
-            onChange(e.target.value);
-          }}
-          onKeyDown={onKeyDown}
-          onPaste={onPasteText}
-          rows={1}
-          placeholder={
-            beat.function_label
-              ? `${beat.function_label}…`
-              : index === 0
-                ? "Write one thought…"
-                : ""
-          }
-          className="min-w-0 flex-1 resize-none overflow-hidden bg-transparent py-1.5 text-sm leading-relaxed text-ink outline-none placeholder:text-ink-faint"
-        />
+        {/* The underlines are painted by a mirror sitting exactly behind the
+            textarea, since a textarea cannot style a range of its own text.
+            Only when there is something to paint — an untagged line keeps the
+            plain control, so the common case cannot drift out of alignment. */}
+        <div className="relative min-w-0 flex-1">
+          {tags.length > 0 && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 whitespace-pre-wrap break-words py-1.5 text-sm leading-relaxed text-ink"
+            >
+              {underlineSegments(beat.text, tags).map((seg, i) => (
+                <span
+                  key={i}
+                  style={
+                    seg.color
+                      ? {
+                          textDecoration: "underline",
+                          textDecorationColor: seg.color,
+                          textDecorationThickness: "2px",
+                          textUnderlineOffset: "3px",
+                        }
+                      : undefined
+                  }
+                >
+                  {seg.text}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <textarea
+            ref={(el) => {
+              registerInput(el);
+              autoGrow(el);
+            }}
+            value={beat.text}
+            onChange={(e) => {
+              autoGrow(e.currentTarget);
+              onChange(e.target.value);
+            }}
+            onKeyDown={onKeyDown}
+            onPaste={onPasteText}
+            onFocus={onFocusLine}
+            onSelect={(e) =>
+              onSelectRange(e.currentTarget.selectionStart, e.currentTarget.selectionEnd)
+            }
+            rows={1}
+            placeholder={
+              beat.function_label
+                ? `${beat.function_label}…`
+                : index === 0
+                  ? "Write one thought…"
+                  : ""
+            }
+            className={`relative w-full resize-none overflow-hidden bg-transparent py-1.5 text-sm leading-relaxed outline-none placeholder:text-ink-faint ${
+              tags.length > 0 ? "text-transparent caret-[#ededf0]" : "text-ink"
+            }`}
+          />
+        </div>
 
         {beat.function_label && (
           <button
