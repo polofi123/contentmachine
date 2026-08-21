@@ -48,6 +48,7 @@ export function Guide({
   selection,
   onTag,
   onRemoveTag,
+  siblings,
   pile,
 }: {
   label: string | null;
@@ -57,6 +58,7 @@ export function Guide({
   selection: string | null;
   onTag: (componentId: string) => void;
   onRemoveTag: (tagId: string) => void;
+  siblings: { id: string; source_id: string | null; name: string; body: string | null }[];
   pile: PileItem[];
 }) {
   const [tab, setTab] = useState<"guide" | "pile">("guide");
@@ -197,6 +199,32 @@ export function Guide({
                 })}
               </div>
             </div>
+          )}
+
+          {siblings.length > 0 && (
+            <details className="mt-3 border-t border-border-soft pt-2">
+              <summary className="cursor-pointer text-[10px] tracking-wide text-ink-dim">
+                MORE ON THIS{" "}
+                <span className="font-mono text-ink-faint">{siblings.length}</span>
+              </summary>
+              <div className="mt-1.5 space-y-1">
+                {siblings.map((c) => (
+                  <details key={c.id} className="rounded-md border border-border-soft">
+                    <summary className="flex cursor-pointer items-baseline gap-2 px-2 py-1 text-[11px] text-ink-dim">
+                      {c.source_id && (
+                        <span className="font-mono text-[10px] text-ink-faint">{c.source_id}</span>
+                      )}
+                      <span className="min-w-0 flex-1">{c.name}</span>
+                    </summary>
+                    {c.body && (
+                      <p className="prose-body whitespace-pre-wrap border-t border-border-soft px-2 py-1.5 text-[10px] leading-relaxed text-ink-faint">
+                        {c.body}
+                      </p>
+                    )}
+                  </details>
+                ))}
+              </div>
+            </details>
           )}
 
           {teaching && teaching.children.length > 0 && wordTypes.length === 0 && (

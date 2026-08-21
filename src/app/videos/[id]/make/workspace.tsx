@@ -713,6 +713,20 @@ export function Workspace({
         .map((c) => ({ id: c.id, source_id: c.source_id, name: c.name, body: c.body }))
     : [];
 
+  // The rest of the layer this line teaches from. HOOK-02 explains the six
+  // words; the master system, the checklist and the worked examples are its
+  // neighbours, and standing on the Hook line should reach them too.
+  const siblings = teachingComponent
+    ? guideComponents
+        .filter(
+          (c) =>
+            c.layer_id === teachingComponent.layer_id &&
+            c.id !== teachingComponent.id &&
+            !c.parent_id,
+        )
+        .map((c) => ({ id: c.id, source_id: c.source_id, name: c.name, body: c.body }))
+    : [];
+
   const activeTags = focused ? tags.filter((t) => t.beat_id === focused.id) : [];
 
   const tagSelection = (componentId: string) => {
@@ -861,6 +875,7 @@ export function Workspace({
           selection={selection?.text ?? null}
           onTag={tagSelection}
           onRemoveTag={dropTag}
+          siblings={siblings}
           pile={pile}
         />
       </div>

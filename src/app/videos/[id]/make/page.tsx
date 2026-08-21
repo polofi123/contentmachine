@@ -144,8 +144,18 @@ export default async function MakePage({ params }: PageProps<"/videos/[id]/make"
   );
   const rootIds = new Set(roots.map((c) => c.id));
 
+  // The whole layer a line teaches from, not just the one component it points
+  // at. Standing on the Hook line should reach all 16 of the Hooks layer — the
+  // master system, the checklist, the worked examples — not only the six words.
+  const guideLayers = new Set(roots.map((c) => c.layer_id).filter(Boolean));
+
   const guideComponents: GuideComponent[] = (components ?? [])
-    .filter((c) => rootIds.has(c.id) || (c.parent_id && rootIds.has(c.parent_id)))
+    .filter(
+      (c) =>
+        rootIds.has(c.id) ||
+        (c.parent_id && rootIds.has(c.parent_id)) ||
+        (c.layer_id && guideLayers.has(c.layer_id) && !c.is_placeholder),
+    )
     .map((c) => ({
       id: c.id,
       source_id: c.source_id,
