@@ -45,12 +45,20 @@ export function LegosBody({
   videoId,
   video,
   notes,
+  // MAKE puts the angle at the top of the page as the premise, so this form
+  // omits it entirely rather than showing a second input for one column.
+  // updateLegos treats a missing field as "leave it alone" — carrying a hidden
+  // copy instead would go stale the moment the premise above was edited, and
+  // saving this form would quietly revert it.
+  hideAngle = false,
 }: {
   videoId: string;
   video: LegoValues;
   notes: string | null;
+  hideAngle?: boolean;
 }) {
   const filled = LEGOS.filter(([f]) => video[f]).length;
+  const fields = LEGOS.filter(([f]) => !(hideAngle && f === "lego_angle"));
 
   return (
     <form action={updateLegos} className="space-y-2.5">
@@ -87,7 +95,7 @@ export function LegosBody({
           </span>
         </summary>
         <div className="space-y-2.5 border-t border-border-soft px-2.5 py-2.5">
-          {LEGOS.map(([field, label, hint]) => (
+          {fields.map(([field, label, hint]) => (
             <label key={field} className="block">
               <span className="mb-1 block text-[11px] text-ink-dim">{label}</span>
               <textarea
