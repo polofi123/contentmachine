@@ -997,11 +997,17 @@ function BeatRow({
             textarea, since a textarea cannot style a range of its own text.
             Only when there is something to paint — an untagged line keeps the
             plain control, so the common case cannot drift out of alignment. */}
-        <div className="relative min-w-0 flex-1">
+        {/* Typography lives on the wrapper, not on the two children.
+            globals.css sets `input, textarea, select { font: inherit }`
+            unlayered, and unlayered CSS beats Tailwind's @layer utilities — so
+            text-sm never reached the textarea and the mirror drew at a
+            different size. Inheriting from one parent keeps them identical by
+            construction rather than by matching class lists. */}
+        <div className="relative min-w-0 flex-1 text-sm leading-relaxed">
           {tags.length > 0 && (
             <div
               aria-hidden
-              className="pointer-events-none absolute inset-0 whitespace-pre-wrap break-words py-1.5 text-sm leading-relaxed text-ink"
+              className="pointer-events-none absolute inset-0 whitespace-pre-wrap break-words py-1.5 text-ink"
             >
               {underlineSegments(beat.text, tags).map((seg, i) => (
                 <span
@@ -1047,9 +1053,14 @@ function BeatRow({
                   ? "Write one thought…"
                   : ""
             }
-            className={`relative w-full resize-none overflow-hidden bg-transparent py-1.5 text-sm leading-relaxed outline-none placeholder:text-ink-faint ${
-              tags.length > 0 ? "text-transparent caret-[#ededf0]" : "text-ink"
-            }`}
+            // Inline, because `color: inherit` in globals.css is unlayered and
+            // would beat any utility class trying to hide this text.
+            style={
+              tags.length > 0
+                ? { color: "transparent", caretColor: "var(--color-ink)" }
+                : undefined
+            }
+            className="relative w-full resize-none overflow-hidden bg-transparent py-1.5 outline-none placeholder:text-ink-faint"
           />
         </div>
 
