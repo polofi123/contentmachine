@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { LegoField, LegoOption } from "./lego-options";
 import {
   updateLegos,
   setLoopType,
@@ -41,6 +42,10 @@ export type LegoValues = {
   [K in (typeof LEGOS)[number][0]]: string | null;
 };
 
+// LegoField / LegoOption / LEGO_OPTION_LAYERS live in lego-options.ts, outside
+// this "use client" boundary, so Server Components can actually read them.
+
+
 export function LegosBody({
   videoId,
   video,
@@ -51,14 +56,27 @@ export function LegosBody({
   // copy instead would go stale the moment the premise above was edited, and
   // saving this form would quietly revert it.
   hideAngle = false,
+  options = {},
 }: {
   videoId: string;
   video: LegoValues;
   notes: string | null;
   hideAngle?: boolean;
+  options?: Partial<Record<LegoField, LegoOption[]>>;
 }) {
   const filled = LEGOS.filter(([f]) => video[f]).length;
   const fields = LEGOS.filter(([f]) => !(hideAngle && f === "lego_angle"));
+
+  // Controlled, so tapping an option can drop its name into the sentence.
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(LEGOS.map(([f]) => [f, video[f] ?? ""])),
+  );
+
+  const append = (field: string, name: string) =>
+    setValues((v) => ({
+      ...v,
+      [field]: v[field]?.trim() ? `${v[field].replace(/,\s*$/, "")}, ${name}` : name,
+    }));
 
   return (
     <form action={updateLegos} className="space-y-2.5">
@@ -96,16 +114,23 @@ export function LegosBody({
         </summary>
         <div className="space-y-2.5 border-t border-border-soft px-2.5 py-2.5">
           {fields.map(([field, label, hint]) => (
-            <label key={field} className="block">
-              <span className="mb-1 block text-[11px] text-ink-dim">{label}</span>
-              <textarea
-                name={field}
-                defaultValue={video[field] ?? ""}
-                rows={1}
-                placeholder={hint}
-                className={`${input} resize-none`}
+            <div key={field}>
+              <label className="block">
+                <span className="mb-1 block text-[11px] text-ink-dim">{label}</span>
+                <textarea
+                  name={field}
+                  value={values[field]}
+                  onChange={(e) => setValues((v) => ({ ...v, [field]: e.target.value }))}
+                  rows={1}
+                  placeholder={hint}
+                  className={`${input} resize-none`}
+                />
+              </label>
+              <LegoOptions
+                groups={options[field] ?? []}
+                onPick={(name) => append(field, name)}
               />
-            </label>
+            </div>
           ))}
         </div>
       </details>
@@ -114,6 +139,69 @@ export function LegosBody({
         Save
       </button>
     </form>
+  );
+}
+
+/**
+ * The named options that go with a Lego, one group at a time.
+ *
+ * Closed by default and opened one group at a time, because Hook alone reaches
+ * ~90 options across four layers — dumping all of them under a text box would
+ * bury the box. Tapping a name appends it to the sentence rather than replacing
+ * it, so the prose can stay a sentence.
+ */
+function LegoOptions({
+  groups,
+  onPick,
+}: {
+  groups: LegoOption[];
+  onPick: (name: string) => void;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  if (groups.length === 0) return null;
+
+  const names = Array.from(new Set(groups.map((g) => g.group)));
+
+  return (
+    <div className="mt-1">
+      <div className="flex flex-wrap gap-1">
+        {names.map((name) => {
+          const count = groups.filter((g) => g.group === name).length;
+          const isOpen = open === name;
+          return (
+            <button
+              key={name}
+              type="button"
+              onClick={() => setOpen(isOpen ? null : name)}
+              className={`rounded border px-1.5 py-0.5 text-[10px] transition-colors ${
+                isOpen
+                  ? "border-accent-dim text-accent"
+                  : "border-border-soft text-ink-faint hover:text-ink-dim"
+              }`}
+            >
+              {name} <span className="font-mono opacity-60">{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {open && (
+        <div className="mt-1 flex max-h-40 flex-wrap gap-1 overflow-y-auto rounded-lg border border-border-soft bg-surface-2 p-1.5">
+          {groups
+            .filter((g) => g.group === open)
+            .map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => onPick(g.name)}
+                className="rounded border border-border-soft px-1.5 py-0.5 text-[10px] text-ink-dim transition-colors hover:border-accent-dim hover:text-accent"
+              >
+                {g.name}
+              </button>
+            ))}
+        </div>
+      )}
+    </div>
   );
 }
 

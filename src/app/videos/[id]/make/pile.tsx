@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 
-export type PileKind = "words" | "hooks" | "inbox";
+export type PileKind = "words" | "hooks" | "bank" | "inbox";
 
 export type PileItem = {
   /** Beat id for parked lines; hook or idea id otherwise. */
@@ -19,6 +19,9 @@ export type PileItem = {
 const GROUPS: { kind: PileKind; label: string; hint: string; openByDefault: boolean }[] = [
   { kind: "words", label: "WORDS", hint: "lines you pulled out of the script", openByDefault: true },
   { kind: "hooks", label: "HOOKS", hint: "candidates you didn't pick", openByDefault: true },
+  // The bank lives in the Hook card too, but that card is collapsed while you
+  // write — and a bank you have to go and open is a bank you forget you have.
+  { kind: "bank", label: "BANK", hint: "reusable hook lines, not tied to a video", openByDefault: false },
   { kind: "inbox", label: "INBOX", hint: "captured ideas", openByDefault: false },
 ];
 

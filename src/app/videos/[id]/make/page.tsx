@@ -16,12 +16,13 @@ export const dynamic = "force-dynamic";
 export default async function MakePage({ params }: PageProps<"/videos/[id]/make">) {
   const { id } = await params;
 
-  const [{ data: video }, script, slots, { data: hooks }, { data: ideas }, { data: components }, { data: layers }, { data: chosen }] =
+  const [{ data: video }, script, slots, { data: hooks }, { data: bank }, { data: ideas }, { data: components }, { data: layers }, { data: chosen }] =
     await Promise.all([
       db.from("videos").select("id, lego_angle").eq("id", id).maybeSingle(),
       loadScript(id),
       loadSlots(id),
       db.from("hooks").select("id, text, is_selected").eq("video_id", id).order("created_at"),
+      db.from("hooks").select("id, text").is("video_id", null).order("created_at"),
       db
         .from("ideas")
         .select("id, title")
@@ -58,6 +59,7 @@ export default async function MakePage({ params }: PageProps<"/videos/[id]/make"
     ...(hooks ?? [])
       .filter((h) => !h.is_selected)
       .map((h) => ({ id: h.id, kind: "hooks" as const, text: h.text })),
+    ...(bank ?? []).map((h) => ({ id: h.id, kind: "bank" as const, text: h.text })),
     ...(ideas ?? []).map((i) => ({ id: i.id, kind: "inbox" as const, text: i.title })),
   ];
 
@@ -76,18 +78,36 @@ export default async function MakePage({ params }: PageProps<"/videos/[id]/make"
   }));
   paletteComponents.sort((a, b) => a.layer_sort - b.layer_sort);
 
-  // Retention hacks and checkpoints used to be cards *below* the script, met
-  // only once the writing was done. As leftover bricks they are available while
-  // it is still being written, which is the only time they can change it.
+  // The variables that decide whether the video has what it needs, beside the
+  // writing rather than in cards below it. Everything a MAKE decision touches:
+  // psychology gates, retention hacks, the format, the story shape, the hook
+  // modifiers. Editing vocabulary is deliberately absent — that is EDIT's job,
+  // and nobody should be picking b-roll while finishing a sentence.
+  const VARIABLE_LAYERS = [
+    "checkpoint",
+    "hack",
+    "format",
+    "story_format",
+    "story_loop",
+    "story",
+    "hook_modifier",
+    "spoken_hook",
+  ];
+
   const chosenMap = new Map((chosen ?? []).map((c) => [c.component_id, c]));
   const trayComponents: TrayComponent[] = named
-    .filter((c) => c.layer_id === "hack" || c.layer_id === "checkpoint")
+    .filter((c) => c.layer_id && VARIABLE_LAYERS.includes(c.layer_id))
+    .sort(
+      (a, b) =>
+        VARIABLE_LAYERS.indexOf(a.layer_id ?? "") - VARIABLE_LAYERS.indexOf(b.layer_id ?? ""),
+    )
     .map((c) => {
       const picked = chosenMap.get(c.id);
       return {
         id: c.id,
         source_id: c.source_id,
         name: c.name,
+        layer_id: c.layer_id as string,
         layer_label: layerInfo.get(c.layer_id ?? "")?.label ?? "Other",
         state: (picked?.state as "used" | "skipped") ?? "none",
         anchored: Boolean(picked?.anchor_beat_id),

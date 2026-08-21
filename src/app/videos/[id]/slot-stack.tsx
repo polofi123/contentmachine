@@ -9,6 +9,7 @@ import {
   type PickerComponent,
   type ScriptRow,
 } from "./slot-bodies";
+import { LEGO_OPTION_LAYERS, type LegoField, type LegoOption } from "./lego-options";
 
 // Hacks and checkpoints record WHERE they landed, so their pickers offer a
 // placement. Everywhere else a placement box would just be an empty field.
@@ -128,6 +129,24 @@ export async function SlotStack({
 
   const loopDetail = (components ?? []).find((c) => c.source_id === "PKG-02")?.body ?? null;
 
+  // The vocabulary that belongs beside each Lego, so the prose can be written
+  // while looking at the named options instead of guessing at them.
+  const { data: layers } = await db.from("layers").select("id, label, sort_order").order("sort_order");
+  const layerLabel = new Map((layers ?? []).map((l) => [l.id, l.label]));
+
+  const legoOptions = Object.fromEntries(
+    Object.entries(LEGO_OPTION_LAYERS).map(([field, layerIds]) => [
+      field,
+      (components ?? [])
+        .filter((c) => c.layer_id && layerIds.includes(c.layer_id) && !c.is_placeholder)
+        .map<LegoOption>((c) => ({
+          id: c.id,
+          name: c.name,
+          group: layerLabel.get(c.layer_id ?? "") ?? "Other",
+        })),
+    ]),
+  ) as Partial<Record<LegoField, LegoOption[]>>;
+
   return (
     <div className="space-y-2.5">
       {slots.map((slot) => {
@@ -158,6 +177,7 @@ export async function SlotStack({
                 video={video}
                 notes={video.notes}
                 hideAngle={hideAngleInLegos}
+                options={legoOptions}
               />
             </SlotCard>
           );
