@@ -2,8 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import type { Database } from "@/lib/database.types";
 
-const touch = (id: string) => revalidatePath(`/videos/${id}`);
+// 'layout' scope, not the bare path: the video is now a layout wrapping /make
+// and /edit, and a mutation made in one workspace has to reach the other.
+const touch = (id: string) => revalidatePath(`/videos/${id}`, "layout");
 
 // A slot becomes 'filled' the moment it has content, but an explicit 'skipped'
 // is never overwritten by that — deciding not to do something is a decision,
@@ -53,9 +56,8 @@ export async function updateLegos(formData: FormData) {
 
   const f = (k: string) => String(formData.get(k) ?? "").trim() || null;
 
-  const patch = {
+  const patch: Database["public"]["Tables"]["videos"]["Update"] = {
     lego_topic: f("lego_topic"),
-    lego_angle: f("lego_angle"),
     lego_hook: f("lego_hook"),
     lego_story_structure: f("lego_story_structure"),
     lego_visual_format: f("lego_visual_format"),
@@ -64,12 +66,27 @@ export async function updateLegos(formData: FormData) {
     notes: f("notes"),
   };
 
+  // A field that wasn't submitted is left alone rather than blanked. MAKE
+  // renders the angle as the premise above the card and omits it here, and
+  // "absent" has to mean "unchanged" or opening this form would erase it.
+  if (formData.has("lego_angle")) patch.lego_angle = f("lego_angle");
+
   const { error } = await db.from("videos").update(patch).eq("id", videoId);
   if (error) throw new Error(`Could not save Legos: ${error.message}`);
 
-  // Notes alone count as filled: a pile of raw thinking is real content, and
+  // Read back rather than judging from the patch — otherwise a form that
+  // omitted the angle would report the slot empty while an angle is sitting
+  // in the row. Notes alone count: a pile of raw thinking is real content, and
   // the slot shouldn't read empty just because it isn't sorted into fields yet.
-  await markFilled(videoId, "legos", Object.values(patch).some(Boolean));
+  const { data: saved } = await db
+    .from("videos")
+    .select(
+      "lego_topic, lego_angle, lego_hook, lego_story_structure, lego_visual_format, lego_key_visuals, lego_audio, notes",
+    )
+    .eq("id", videoId)
+    .maybeSingle();
+
+  await markFilled(videoId, "legos", Object.values(saved ?? {}).some(Boolean));
   touch(videoId);
 }
 
