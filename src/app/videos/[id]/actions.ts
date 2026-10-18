@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import type { Database } from "@/lib/database.types";
+import { isPlatform, platformFromUrl, platformVideoId } from "@/lib/platform";
+import { isStoryRole } from "./story-vocab";
+import { isVideoStatus } from "./video-status";
 
 // 'layout' scope, not the bare path: the video is now a layout wrapping /make
 // and /edit, and a mutation made in one workspace has to reach the other.
@@ -355,7 +358,7 @@ export async function addBeat(formData: FormData) {
   const { error } = await db.from("script_beats").insert({
     script_id: scriptId,
     sort_order: (last?.sort_order ?? 0) + 1,
-    function_label: String(formData.get("function_label") ?? "").trim() || null,
+    story_role: role(formData),
     t_start_sec: t0 === "" ? null : Number(t0),
     t_end_sec: t1 === "" ? null : Number(t1),
     text: String(formData.get("text") ?? "").trim() || null,
@@ -363,6 +366,18 @@ export async function addBeat(formData: FormData) {
 
   if (error) throw new Error(`Could not add beat: ${error.message}`);
   touch(videoId);
+}
+
+/**
+ * The role off a form, validated against the vocabulary.
+ *
+ * The select can only offer valid values, but a posted form is not a trusted
+ * input and story_role carries a CHECK constraint — an unknown value would come
+ * back as a database error rather than as the "no role" the caller meant.
+ */
+function role(formData: FormData): string | null {
+  const value = String(formData.get("story_role") ?? "").trim();
+  return isStoryRole(value) ? value : null;
 }
 
 export async function updateBeat(formData: FormData) {
@@ -376,7 +391,7 @@ export async function updateBeat(formData: FormData) {
   const { error } = await db
     .from("script_beats")
     .update({
-      function_label: String(formData.get("function_label") ?? "").trim() || null,
+      story_role: role(formData),
       t_start_sec: t0 === "" ? null : Number(t0),
       t_end_sec: t1 === "" ? null : Number(t1),
       text: String(formData.get("text") ?? "").trim() || null,
@@ -407,6 +422,59 @@ export async function updateEditSpec(formData: FormData) {
     .eq("id", scriptId);
 
   touch(videoId);
+}
+
+/* ------------------------------------------------------------------- ship */
+
+// Where the video ended up. Separate from updateVideoMeta because this is the
+// moment the record stops being a plan and becomes a thing with an outcome —
+// and because the URL is what makes the numbers below it attributable to
+// anything. Everything here is optional and can be filled in weeks later.
+export async function publishVideo(formData: FormData) {
+  const videoId = String(formData.get("video_id") ?? "");
+  if (!videoId) return;
+
+  const f = (k: string) => String(formData.get(k) ?? "").trim() || null;
+
+  const url = f("url");
+  const rawStatus = String(formData.get("status") ?? "").trim();
+  const status = isVideoStatus(rawStatus) ? rawStatus : null;
+  const rawPlatform = String(formData.get("platform") ?? "").trim();
+
+  const { data: current } = await db
+    .from("videos")
+    .select("published_at")
+    .eq("id", videoId)
+    .maybeSingle();
+
+  // Saying "published" without saying when is the overwhelmingly common case —
+  // you are logging it the day it went up. A date typed by hand always wins.
+  const date = f("published_at");
+  const publishedAt = date
+    ? new Date(`${date}T00:00:00Z`).toISOString()
+    : status === "published"
+      ? (current?.published_at ?? new Date().toISOString())
+      : null;
+
+  const { error } = await db
+    .from("videos")
+    .update({
+      url,
+      // Both are derived from the URL when they weren't given, because the id
+      // is the difference between a manual view count forever and a fetch
+      // later, and nobody types it twice on purpose.
+      platform: isPlatform(rawPlatform) ? rawPlatform : platformFromUrl(url),
+      platform_video_id: f("platform_video_id") ?? platformVideoId(url),
+      published_at: publishedAt,
+      ...(status ? { status } : {}),
+    })
+    .eq("id", videoId);
+
+  if (error) throw new Error(`Could not save the release: ${error.message}`);
+
+  touch(videoId);
+  revalidatePath("/videos");
+  revalidatePath("/plan");
 }
 
 /* ----------------------------------------------------------------- metrics */

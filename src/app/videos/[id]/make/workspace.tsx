@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -13,29 +13,55 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { approxSec, totalSec, totalWords } from "@/lib/timing";
+import { loopSpans, type StoryBeat } from "@/lib/story";
 import type { PileItem } from "./pile";
 import { Guide, colorFor, type Teaching, type WordType } from "./guide";
-import { LABEL_TEACHES, WORD_TAGGABLE } from "../lego-options";
+import { WORD_TAGGABLE } from "../lego-options";
+import {
+  DANCE_LABEL,
+  DANCE_RELATIONS,
+  ROLE_HINT,
+  ROLE_TEACHES,
+  STORY_ROLES,
+  isDanceRelation,
+  isStoryRole,
+  type DanceRelation,
+  type StoryRole,
+} from "../story-vocab";
+import { ChipMenu } from "./chip-menu";
 import { Palette, type PaletteComponent } from "./palette";
 import { Tray, type TrayComponent } from "./tray";
 import { Diagnostics } from "./diagnostics";
+import type {
+  DirectionRow,
+  LensRow,
+  QuestionRow,
+  StoryReview,
+  TensionSource,
+} from "./story-panel";
 import {
   beatFromText,
   createBeats,
   ensureScript,
   parkBeat,
-  plantComponent,
   removeBeat,
   reorderBeats,
   saveBeatText,
   savePremise,
   setBeatSection,
   unparkBeat,
-  unplantComponent,
   addBeatTag,
   removeBeatTag,
   healBeatTags,
 } from "./actions";
+import {
+  attachTechnique,
+  autoLoop,
+  detachTechnique,
+  setBeatDance,
+  setBeatLoop,
+  setBeatRole,
+} from "./story-actions";
 
 export type GuideComponent = {
   id: string;
@@ -63,8 +89,15 @@ export type WorkspaceBeat = {
   text: string;
   story_section: string | null;
   t_start_sec: number | null;
-  function_label: string | null;
-  function_component_id: string | null;
+
+  /** What the line is FOR. A different taxonomy from the techniques on it. */
+  story_role: string | null;
+  /** How it follows the line above. Stored here, pointing back. */
+  dance_relation: string | null;
+  /** Which cycle of attention it belongs to. */
+  story_loop: number | null;
+  /** Component ids planted on this line. Many per line, many lines per one. */
+  techniques: string[];
 };
 
 const SAVE_DEBOUNCE_MS = 600;
@@ -75,13 +108,78 @@ const SECTION_CYCLE: (StorySection | null)[] = ["start", "middle", "end", null];
 
 const newId = () => crypto.randomUUID();
 
+/* ------------------------------------------------------ the review store */
+
+// The review is client-only state that has to survive a reload, which makes it
+// an external store rather than component state — so it is read through
+// useSyncExternalStore, the primitive React provides for exactly this.
+//
+// localStorage, not sessionStorage. Session storage dies with the tab, so
+// closing the window or opening the video in a second tab lost the review — a
+// distinction nobody should have to know about when the thing they asked for
+// has silently gone.
+//
+// The alternative (useState seeded from an effect) is what the lint rule
+// rejects, and rightly: the server renders `null`, the effect then sets the
+// stored value, and everything derived from it — the margin dots — flickers
+// through a hydration mismatch on the way. useSyncExternalStore has a separate
+// server snapshot precisely so that does not happen.
+
+const reviewListeners = new Set<() => void>();
+
+const subscribeReview = (onChange: () => void) => {
+  reviewListeners.add(onChange);
+  return () => void reviewListeners.delete(onChange);
+};
+
+// getSnapshot must return a referentially stable value or React re-renders
+// forever, so the parsed object is cached against the raw string it came from.
+let cachedKey: string | null = null;
+let cachedRaw: string | null = null;
+let cachedReview: StoryReview | null = null;
+
+function readReview(key: string): StoryReview | null {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+
+  if (key !== cachedKey || raw !== cachedRaw) {
+    cachedKey = key;
+    cachedRaw = raw;
+    try {
+      cachedReview = raw ? (JSON.parse(raw) as StoryReview) : null;
+    } catch {
+      // A corrupt entry is not worth surfacing — the review is one button away,
+      // and failing to restore it must never break the editor.
+      cachedReview = null;
+    }
+  }
+
+  return cachedReview;
+}
+
+function writeReview(key: string, review: StoryReview | null) {
+  try {
+    if (review) localStorage.setItem(key, JSON.stringify(review));
+    else localStorage.removeItem(key);
+  } catch {
+    // Storage blocked or full. The review still works for this session.
+  }
+  reviewListeners.forEach((listener) => listener());
+}
+
 const emptyBeat = (): WorkspaceBeat => ({
   id: newId(),
   text: "",
   story_section: null,
   t_start_sec: null,
-  function_label: null,
-  function_component_id: null,
+  story_role: null,
+  dance_relation: null,
+  story_loop: null,
+  techniques: [],
 });
 
 /**
@@ -92,27 +190,39 @@ const emptyBeat = (): WorkspaceBeat => ({
  * short, so they are here from the start: SCR-03's opening, the Core Loop
  * through the middle, a payoff and a CTA at the end.
  *
+ * Two things it now carries that it did not before. Every line has a ROLE
+ * rather than a free-text label, so tagging a technique can no longer erase
+ * what the line is for. And the lines are grouped into three loops, because
+ * retention is not one hook followed by hoping — it is build, release, build
+ * again, and the scaffold should show that shape before you have written into
+ * it. A `meaning` line sits before the CTA for the same reason: it is the
+ * easiest beat in short form to leave out and the one that decides whether any
+ * of it landed.
+ *
  * It is a scaffold, not a contract. Lines are deletable, reorderable and
- * relabelable, and nothing is written to the database until the first character
- * is typed — open a video and change your mind and no draft is left behind.
+ * re-rolable, loops are editable, and nothing is written to the database until
+ * the first character is typed — open a video and change your mind and no draft
+ * is left behind.
  */
-const SKELETON: { label: string; section: StorySection }[] = [
-  { label: "Hook", section: "start" },
-  { label: "Foreshadow", section: "start" },
-  { label: "Transition", section: "start" },
-  { label: "Stakes", section: "middle" },
-  { label: "Big question", section: "middle" },
-  { label: "Head fake", section: "middle" },
-  { label: "Rehook", section: "middle" },
-  { label: "Payoff", section: "end" },
-  { label: "CTA", section: "end" },
+const SKELETON: { role: StoryRole; section: StorySection; loop: number }[] = [
+  { role: "hook", section: "start", loop: 1 },
+  { role: "foreshadow", section: "start", loop: 1 },
+  { role: "transition", section: "start", loop: 1 },
+  { role: "stakes", section: "middle", loop: 2 },
+  { role: "question", section: "middle", loop: 2 },
+  { role: "twist", section: "middle", loop: 2 },
+  { role: "rehook", section: "middle", loop: 3 },
+  { role: "payoff", section: "end", loop: 3 },
+  { role: "meaning", section: "end", loop: 3 },
+  { role: "cta", section: "end", loop: 3 },
 ];
 
 export const skeletonBeats = (): WorkspaceBeat[] =>
   SKELETON.map((s) => ({
     ...emptyBeat(),
     story_section: s.section,
-    function_label: s.label,
+    story_role: s.role,
+    story_loop: s.loop,
   }));
 
 /**
@@ -178,6 +288,11 @@ export function Workspace({
   targetSec,
   guideComponents,
   initialTags,
+  direction,
+  lenses,
+  questions,
+  tensionSources,
+  aiEnabled,
 }: {
   videoId: string;
   scriptId: string | null;
@@ -189,6 +304,11 @@ export function Workspace({
   targetSec: number | null;
   guideComponents: GuideComponent[];
   initialTags: BeatTag[];
+  direction: DirectionRow | null;
+  lenses: LensRow[];
+  questions: QuestionRow[];
+  tensionSources: TensionSource[];
+  aiEnabled: boolean;
 }) {
   // A script that has never been written into opens on the skeleton rather than
   // a blank line. Nothing is saved until the first character is typed.
@@ -205,6 +325,56 @@ export function Workspace({
   } | null>(null);
   /** Which line the slash palette is open on, if any. */
   const [paletteFor, setPaletteFor] = useState<string | null>(null);
+  /** Which line has its role or relation menu open, if any. */
+  const [menuFor, setMenuFor] = useState<{ id: string; kind: "role" | "dance" } | null>(null);
+  /**
+   * Whether the structure is shown or stays out of the way.
+   *
+   * Off by default, and off is a real mode rather than a lesser one — clean
+   * writing is what this workspace is for, and roles, relations and loop
+   * headers are things you notice ABOUT writing that already exists. They are
+   * still one hover away when it is off, so nothing is hidden, only quiet.
+   */
+  const [overlay, setOverlay] = useState(false);
+  /**
+   * Whether anything is waiting to be written, and when the last write landed.
+   *
+   * The outliner has always saved on its own, but silently — which is fine
+   * right up until the moment you have lost work once, and then a screen that
+   * never says "saved" is a screen you cannot trust. These two drive the
+   * indicator in the footer.
+   */
+  const [dirty, setDirty] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  /**
+   * The last review, owned here rather than by the panel that renders it.
+   *
+   * It used to live inside the STORY tab, which meant clicking GUIDE to read
+   * what a line teaches destroyed it — and it was also wiped on every
+   * keystroke. Both were the same mistake: treating a review you asked for, and
+   * are working from, as throwaway UI state. It now outlives the tab, outlives
+   * an edit, and outlives a reload.
+   */
+  const reviewKey = `story-review:${videoId}`;
+  const review = useSyncExternalStore(
+    subscribeReview,
+    () => readReview(reviewKey),
+    () => null,
+  );
+  const setReview = useCallback(
+    (next: StoryReview | null) => writeReview(reviewKey, next),
+    [reviewKey],
+  );
+  /**
+   * Lines the editor drafted but you have not accepted.
+   *
+   * Held apart from `beats` on purpose. A draft is not in the script — it shows
+   * as ghost text in the empty line it was written for, and becomes real on
+   * Tab. Writing them straight into the beats would mean the AI had edited your
+   * script and you had to undo it, which is the wrong way round.
+   */
+  const [drafts, setDrafts] = useState<Map<string, string>>(new Map());
   const [tags, setTags] = useState<BeatTag[]>(initialTags);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [selection, setSelection] = useState<{
@@ -225,15 +395,33 @@ export function Workspace({
   // text are order-dependent — a reorder that lands before the insert it refers
   // to would renumber a row that does not exist yet.
   const chain = useRef<Promise<unknown>>(Promise.resolve());
+  // How many writes are still in flight, so "saved" means the queue is empty
+  // rather than "the most recent one happened to finish".
+  const inFlight = useRef(0);
+
   const enqueue = useCallback((fn: () => Promise<unknown>) => {
+    inFlight.current += 1;
+    setDirty(true);
+
     const run = async () => {
+      let ok = true;
       try {
         await fn();
         setSaveError(null);
       } catch (err) {
+        ok = false;
         setSaveError(err instanceof Error ? err.message : "Could not save");
+      } finally {
+        inFlight.current -= 1;
+        if (inFlight.current === 0) {
+          setDirty(false);
+          // Only stamp a time when the write actually landed. A clock that
+          // updates after a failure is worse than no clock.
+          if (ok) setSavedAt(Date.now());
+        }
       }
     };
+
     chain.current = chain.current.then(run, run);
     return chain.current;
   }, []);
@@ -271,7 +459,8 @@ export function Workspace({
           id: b.id,
           text: b.text,
           story_section: b.story_section,
-          function_label: b.function_label,
+          story_role: b.story_role,
+          story_loop: b.story_loop,
         })),
         orderedIds,
       );
@@ -299,9 +488,14 @@ export function Workspace({
     return () => timers.forEach((t) => clearTimeout(t));
   }, []);
 
+
   const scheduleSave = (beatId: string, text: string, all: WorkspaceBeat[]) => {
     const existing = saveTimers.current.get(beatId);
     if (existing) clearTimeout(existing);
+
+    // Typed but not yet written. The footer says so from this moment, not from
+    // when the debounce eventually fires.
+    setDirty(true);
 
     const orderedIds = all.map((b) => b.id);
 
@@ -323,6 +517,11 @@ export function Workspace({
   const handleChange = (index: number, text: string) => {
     const next = beats.map((b, i) => (i === index ? { ...b, text } : b));
     setBeats(next);
+
+    // Deliberately does NOT clear the review. Editing a line a note is about is
+    // usually you acting ON that note, and deleting it at that exact moment
+    // takes away the thing being worked from. Drift is shown on the note
+    // instead — see StoryReview.snapshot.
 
     // Same repair the server does, applied immediately so the underline follows
     // the words on screen rather than lagging a save behind them.
@@ -353,9 +552,12 @@ export function Workspace({
 
     const beat = emptyBeat();
     beat.text = after;
-    // A new line continues the section it was written inside — the writer is
-    // still in the middle, so asking again would be noise.
+    // A new line continues the section and the loop it was written inside — the
+    // writer is still in the middle of both, so asking again would be noise.
+    // The ROLE is deliberately not inherited: two consecutive lines are rarely
+    // doing the same job, and a wrong role is worse than none.
     beat.story_section = current.story_section;
+    beat.story_loop = current.story_loop;
 
     const next = [
       ...beats.slice(0, index),
@@ -419,6 +621,7 @@ export function Workspace({
     const made = pieces.map((text, i) => {
       const beat = emptyBeat();
       beat.story_section = current.story_section;
+      beat.story_loop = current.story_loop;
       beat.text = i === 0 ? before + text : text;
       return beat;
     });
@@ -537,16 +740,26 @@ export function Workspace({
     });
   };
 
-  /** One gesture: this line now says what it does, and the video records it. */
+  /**
+   * Plant a technique on this line.
+   *
+   * Adds rather than replaces — a line can be a counterintuitive claim AND an
+   * open loop — and, crucially, does not touch the line's role. The old version
+   * wrote the component's name over the label, so tagging your hook with "Open
+   * Loop" stopped it being the hook. That is the bug this whole split exists to
+   * fix, and it would be quietly reintroduced by one careless line here.
+   */
   const plant = (beatId: string, component: PaletteComponent) => {
     const beat = beats.find((b) => b.id === beatId);
-    if (!beat) return;
+    if (!beat || beat.techniques.includes(component.id)) {
+      setPaletteFor(null);
+      setFocusTarget({ id: beatId, caret: "end" });
+      return;
+    }
 
     setBeats((all) =>
       all.map((b) =>
-        b.id === beatId
-          ? { ...b, function_label: component.name, function_component_id: component.id }
-          : b,
+        b.id === beatId ? { ...b, techniques: [...b.techniques, component.id] } : b,
       ),
     );
     setPaletteFor(null);
@@ -556,26 +769,200 @@ export function Workspace({
     enqueue(async () => {
       // A line that was never saved cannot carry a technique yet.
       await persistPending(beats, orderedIds);
-      await plantComponent(videoId, beatId, component.id, component.name);
+      await attachTechnique(videoId, beatId, component.id);
     });
   };
 
-  const unplant = (beatId: string) => {
-    const beat = beats.find((b) => b.id === beatId);
-    if (!beat?.function_component_id) return;
-    const componentId = beat.function_component_id;
-
+  const unplant = (beatId: string, componentId: string) => {
     setBeats((all) =>
       all.map((b) =>
-        b.id === beatId ? { ...b, function_label: null, function_component_id: null } : b,
+        b.id === beatId
+          ? { ...b, techniques: b.techniques.filter((id) => id !== componentId) }
+          : b,
       ),
     );
 
-    enqueue(() => unplantComponent(videoId, beatId, componentId));
+    enqueue(() => detachTechnique(videoId, beatId, componentId));
+  };
+
+  /**
+   * Write everything down, now.
+   *
+   * The outliner already saves on a 600ms debounce, so this is not what makes
+   * the work safe — it is what makes the work *visibly* safe, which after
+   * losing a script is not the same thing. It cancels every pending timer and
+   * runs those writes immediately against the current text, so pressing it
+   * always means "there is nothing left in flight".
+   *
+   * Safe to press with nothing outstanding: it still flushes any unsaved lines
+   * and stamps the clock, so the answer to "did that save?" is always on screen.
+   */
+  const saveNow = useCallback(() => {
+    const waiting = [...saveTimers.current.keys()];
+    saveTimers.current.forEach((timer) => clearTimeout(timer));
+    saveTimers.current.clear();
+
+    if (premiseTimer.current) {
+      clearTimeout(premiseTimer.current);
+      premiseTimer.current = null;
+    }
+
+    const all = beats;
+    const orderedIds = all.map((b) => b.id);
+
+    return enqueue(async () => {
+      await persistPending(all, orderedIds);
+      await savePremise(videoId, premise);
+
+      for (const beatId of waiting) {
+        const beat = all.find((b) => b.id === beatId);
+        if (!beat) continue;
+        await saveBeatText(beatId, beat.text);
+        await healBeatTags(beatId, beat.text);
+      }
+    });
+  }, [beats, premise, enqueue, persistPending, videoId]);
+
+  // Ctrl/Cmd+S, because that is what everyone's hands already do.
+  //
+  // The handler is held in a ref so the listener is attached once rather than
+  // torn down and rebuilt on every keystroke — `saveNow` closes over the beats,
+  // so it changes as you type. The ref is updated in an effect, not during
+  // render, which is the rule React enforces here.
+  const saveRef = useRef(saveNow);
+
+  useEffect(() => {
+    saveRef.current = saveNow;
+  }, [saveNow]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void saveRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  /** What this line is for. Independent of anything planted on it. */
+  const setRole = (beatId: string, role: StoryRole | null) => {
+    const updated = beats.map((b) => (b.id === beatId ? { ...b, story_role: role } : b));
+    setBeats(updated);
+    setMenuFor(null);
+    setFocusTarget({ id: beatId, caret: "end" });
+
+    const orderedIds = updated.map((b) => b.id);
+    enqueue(async () => {
+      await persistPending(updated, orderedIds);
+      await setBeatRole(videoId, beatId, role);
+    });
+  };
+
+  /** How this line follows the one above it. */
+  const setDance = (beatId: string, relation: DanceRelation | null) => {
+    const updated = beats.map((b) => (b.id === beatId ? { ...b, dance_relation: relation } : b));
+    setBeats(updated);
+    setMenuFor(null);
+    setFocusTarget({ id: beatId, caret: "end" });
+
+    const orderedIds = updated.map((b) => b.id);
+    enqueue(async () => {
+      await persistPending(updated, orderedIds);
+      await setBeatDance(videoId, beatId, relation);
+    });
+  };
+
+  /**
+   * Move a line into the next loop, wrapping back to unassigned.
+   *
+   * Cycling rather than picking, because loop numbers are almost always
+   * assigned to a line by looking at its neighbours — "this one starts the next
+   * one" — and the ceiling is one past whatever is already in use, so a new
+   * loop is always exactly one tap past the last.
+   */
+  const cycleLoop = (beatId: string) => {
+    const highest = beats.reduce((n, b) => Math.max(n, b.story_loop ?? 0), 0);
+    const current = beats.find((b) => b.id === beatId)?.story_loop ?? null;
+    const next = current === null ? 1 : current >= highest ? null : current + 1;
+
+    const updated = beats.map((b) => (b.id === beatId ? { ...b, story_loop: next } : b));
+    setBeats(updated);
+
+    const orderedIds = updated.map((b) => b.id);
+    enqueue(async () => {
+      await persistPending(updated, orderedIds);
+      await setBeatLoop(videoId, beatId, next);
+    });
+  };
+
+  /**
+   * Put text into a line — from an accepted draft, or a fix from the review.
+   *
+   * Routed through the same path as typing, so it debounces, saves and clears
+   * stale notes exactly as a keystroke would. The one addition is dropping the
+   * draft for that line: once the words are in the script they are yours, and a
+   * ghost still offering them would be offering to overwrite you.
+   */
+  const applyLine = (beatId: string, text: string) => {
+    const index = beats.findIndex((b) => b.id === beatId);
+    if (index < 0) return;
+
+    handleChange(index, text);
+    setDrafts((all) => {
+      if (!all.has(beatId)) return all;
+      const next = new Map(all);
+      next.delete(beatId);
+      return next;
+    });
+    setFocusTarget({ id: beatId, caret: "end" });
+  };
+
+  /** Number every line from the hooks and re-hooks already on the script. */
+  const relayLoops = () => {
+    const orderedIds = beats.map((b) => b.id);
+    enqueue(async () => {
+      await persistPending(beats, orderedIds);
+      const scriptId = await getScriptId();
+      await autoLoop(videoId, scriptId);
+    });
+
+    // Mirror the server's rule locally so the numbers move now rather than
+    // after a round trip: a new loop starts at each hook or re-hook, and
+    // anything before the first one belongs to no loop at all.
+    let loop = 0;
+    setBeats((all) =>
+      all.map((b) => {
+        if (b.story_role === "hook" || b.story_role === "rehook") loop += 1;
+        return { ...b, story_loop: loop || null };
+      }),
+    );
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>, index: number) => {
     const el = e.currentTarget;
+    const beat = beats[index];
+
+    // Tab accepts the drafted line sitting in this empty row. Only ever on an
+    // empty row with a draft — everywhere else Tab still moves focus, because
+    // stealing it would break the keyboard for someone who has no drafts.
+    if (e.key === "Tab" && !e.shiftKey && !beat.text.trim() && drafts.has(beat.id)) {
+      e.preventDefault();
+      applyLine(beat.id, drafts.get(beat.id) as string);
+      return;
+    }
+
+    // Escape throws the ghost away without touching the line.
+    if (e.key === "Escape" && drafts.has(beat.id)) {
+      e.preventDefault();
+      setDrafts((all) => {
+        const next = new Map(all);
+        next.delete(beat.id);
+        return next;
+      });
+      return;
+    }
 
     // `/` opens the framework, but only where it cannot be part of a word —
     // otherwise "and/or" would fire the palette mid-sentence.
@@ -610,6 +997,27 @@ export function Workspace({
         e.key as "1" | "2" | "3" | "0"
       ];
       setSection(index, target);
+      return;
+    }
+
+    // The rest of the overlay on the keyboard, same modifier as sections and
+    // reordering. Structuring a script should not mean reaching for the mouse
+    // between every line.
+    if (e.altKey && (e.key === "r" || e.key === "R")) {
+      e.preventDefault();
+      setMenuFor({ id: beats[index].id, kind: "role" });
+      return;
+    }
+
+    if (e.altKey && (e.key === "d" || e.key === "D") && index > 0) {
+      e.preventDefault();
+      setMenuFor({ id: beats[index].id, kind: "dance" });
+      return;
+    }
+
+    if (e.altKey && (e.key === "l" || e.key === "L")) {
+      e.preventDefault();
+      cycleLoop(beats[index].id);
       return;
     }
 
@@ -680,19 +1088,21 @@ export function Workspace({
   /* ---------------------------------------------------------------- guide */
 
   const focused = beats.find((b) => b.id === focusedId) ?? null;
-  const focusLabel = focused?.function_label ?? null;
-  const labelKey = focusLabel?.trim().toLowerCase() ?? "";
+  const focusRole = isStoryRole(focused?.story_role) ? focused.story_role : null;
+  const focusLabel = focusRole;
 
   const byId = new Map(guideComponents.map((c) => [c.id, c]));
   const bySource = new Map(
     guideComponents.filter((c) => c.source_id).map((c) => [c.source_id as string, c]),
   );
 
-  // A component linked through the slash palette wins; the scaffold's own
-  // free-text labels fall back to the table.
+  // A technique you planted yourself wins over the role's default teaching —
+  // you said what this line is doing, so that is what should be explained.
+  // Falling back to the role means a line still teaches something the moment it
+  // has a job, without waiting for you to tag anything.
   const teachingComponent =
-    (focused?.function_component_id ? byId.get(focused.function_component_id) : null) ??
-    (labelKey ? bySource.get(LABEL_TEACHES[labelKey] ?? "") : null) ??
+    (focused?.techniques.length ? byId.get(focused.techniques[0]) : null) ??
+    (focusRole ? bySource.get(ROLE_TEACHES[focusRole]) : null) ??
     null;
 
   const teaching: Teaching | null = teachingComponent
@@ -706,7 +1116,7 @@ export function Workspace({
       }
     : null;
 
-  const taggableLayer = labelKey ? WORD_TAGGABLE[labelKey] : undefined;
+  const taggableLayer = focusRole ? WORD_TAGGABLE[focusRole] : undefined;
   const wordTypes: WordType[] = taggableLayer
     ? guideComponents
         .filter((c) => c.layer_id === taggableLayer)
@@ -764,6 +1174,30 @@ export function Workspace({
   const seconds = totalSec(beats);
   const written = beats.filter((b) => b.text.trim()).length;
 
+  const componentNames = new Map(paletteComponents.map((c) => [c.id, c.name]));
+
+  // The shape lib/story.ts reads. Built once here so the loop headers, the
+  // diagnostics panel and the story panel are all describing the same script
+  // rather than three slightly different derivations of it.
+  const storyBeats: StoryBeat[] = beats.map((b) => ({
+    id: b.id,
+    text: b.text,
+    t_start_sec: b.t_start_sec,
+    story_role: b.story_role,
+    dance_relation: b.dance_relation,
+    story_loop: b.story_loop,
+    story_section: b.story_section,
+  }));
+
+  const loops = loopSpans(storyBeats);
+  const selectedLens = lenses.find((l) => l.is_selected)?.text ?? null;
+
+  // Lines the last review had something to say about, marked in the margin so
+  // a note names a place you can actually see. Derived from the review rather
+  // than held separately — two copies of the same fact is how they drifted
+  // apart and one of them got cleared without the other.
+  const flaggedBeats = new Set((review?.notes ?? []).flatMap((n) => n.beatIds));
+
   return (
     <DndContext
       // A fixed id matters: without one dnd-kit numbers its own accessibility
@@ -774,7 +1208,9 @@ export function Workspace({
       collisionDetection={closestCenter}
       onDragEnd={onDragEnd}
     >
-      <div className="flex gap-6">
+      {/* items-start matters: a flex child stretches to full height by default,
+          and a full-height element has no room to stick. */}
+      <div className="flex items-start gap-6">
         <div className="min-w-0 flex-1">
           <label className="block">
             <span className="mb-1 block text-[10px] tracking-wide text-ink-dim">PREMISE</span>
@@ -788,7 +1224,37 @@ export function Workspace({
           </label>
 
           <div className="mt-5">
-            <span className="mb-2 block text-[10px] tracking-wide text-ink-dim">SCRIPT</span>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-[10px] tracking-wide text-ink-dim">SCRIPT</span>
+
+              {/* The overlay, as a switch rather than a mode you live in.
+                  Structure is something you notice about writing that already
+                  exists; being able to turn it off is what keeps this a place
+                  to write rather than a place to fill in. */}
+              <button
+                type="button"
+                onClick={() => setOverlay((v) => !v)}
+                title="Show roles, relationships and loops"
+                className={`rounded border px-1.5 py-0.5 text-[10px] tracking-wide transition-colors ${
+                  overlay
+                    ? "border-accent-dim text-accent"
+                    : "border-border-soft text-ink-faint hover:text-ink-dim"
+                }`}
+              >
+                STORY
+              </button>
+
+              {overlay && (
+                <button
+                  type="button"
+                  onClick={relayLoops}
+                  title="Start a new loop at each hook and re-hook"
+                  className="text-[10px] tracking-wide text-ink-faint transition-colors hover:text-accent"
+                >
+                  RENUMBER LOOPS
+                </button>
+              )}
+            </div>
 
             <SortableContext
               items={beats.map((b) => b.id)}
@@ -818,7 +1284,58 @@ export function Workspace({
                     }}
                     onCycleSection={() => cycleSection(index)}
                     onPark={() => park(index)}
-                    onUnplant={() => unplant(beat.id)}
+                    onUnplant={(componentId) => unplant(beat.id, componentId)}
+                    techniqueNames={beat.techniques.map(
+                      (id) => componentNames.get(id) ?? "technique",
+                    )}
+                    overlay={overlay}
+                    flagged={flaggedBeats.has(beat.id)}
+                    draft={drafts.get(beat.id) ?? null}
+                    showLoopHeader={
+                      overlay &&
+                      beat.story_loop != null &&
+                      beat.story_loop !== (beats[index - 1]?.story_loop ?? null)
+                    }
+                    loopSec={
+                      beat.story_loop != null
+                        ? loops.find((l) => l.loop === beat.story_loop)?.sec ?? null
+                        : null
+                    }
+                    onCycleLoop={() => cycleLoop(beat.id)}
+                    onOpenMenu={(kind) => setMenuFor({ id: beat.id, kind })}
+                    // Two menus rather than one, so each opens where it was
+                    // clicked: the role badge sits at the end of the line, the
+                    // relation sits in the gap above it.
+                    roleMenu={
+                      menuFor?.id === beat.id && menuFor.kind === "role" ? (
+                        <ChipMenu
+                          options={STORY_ROLES.map((role) => ({
+                            value: role,
+                            label: role.toUpperCase(),
+                            hint: ROLE_HINT[role],
+                          }))}
+                          value={beat.story_role}
+                          clearLabel="NO ROLE"
+                          onPick={(v) => setRole(beat.id, isStoryRole(v) ? v : null)}
+                          onClose={() => setMenuFor(null)}
+                        />
+                      ) : null
+                    }
+                    danceMenu={
+                      menuFor?.id === beat.id && menuFor.kind === "dance" ? (
+                        <ChipMenu
+                          options={DANCE_RELATIONS.map((r) => ({
+                            value: r,
+                            label: DANCE_LABEL[r],
+                          }))}
+                          value={beat.dance_relation}
+                          clearLabel="NOT SAID"
+                          onPick={(v) => setDance(beat.id, isDanceRelation(v) ? v : null)}
+                          onClose={() => setMenuFor(null)}
+                          align="left"
+                        />
+                      ) : null
+                    }
                     tags={tags.filter((t) => t.beat_id === beat.id)}
                     onFocusLine={() => setFocusedId(beat.id)}
                     onSelectRange={(start, end) =>
@@ -852,15 +1369,59 @@ export function Workspace({
 
           {/* Last, and silent until three lines exist. Diagnosis comes after
               creation — never before it. */}
-          <Diagnostics beats={beats} targetSec={targetSec} />
+          {/* Measured facts only. The editor's calls live in the STORY panel
+              beside the buttons that produced them, where their fixes can be
+              one click from the line they replace. */}
+          <Diagnostics
+            beats={storyBeats}
+            questions={questions}
+            direction={direction}
+            lensSelected={selectedLens}
+            lensCount={lenses.length}
+            targetSec={targetSec}
+          />
 
           <div className="mt-6 flex items-center gap-3 border-t border-border-soft pt-2.5">
-            <p className="font-mono text-[11px] text-ink-faint">
-              {approxSec(seconds)} · {words} words · {written} {written === 1 ? "beat" : "beats"}
+            <button
+              type="button"
+              onClick={() => void saveNow()}
+              title="Write everything down now (ctrl+s). It also saves on its own as you type."
+              className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                saveError
+                  ? "border-accent text-accent"
+                  : dirty
+                    ? "border-accent-dim text-accent"
+                    : "border-border-soft text-ink-faint hover:border-border hover:text-ink-dim"
+              }`}
+            >
+              {saveError ? "Retry save" : dirty ? "Save" : "Saved"}
+            </button>
+
+            {/* The reassurance, in words. Autosave that never says so is
+                indistinguishable from no autosave once you have lost work. */}
+            <p className="font-mono text-[10px] text-ink-faint">
+              {saveError
+                ? saveError
+                : dirty
+                  ? "unsaved changes"
+                  : savedAt
+                    ? `saved ${new Date(savedAt).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                      })}`
+                    : "saves as you type"}
             </p>
-            {saveError && <p className="text-[11px] text-accent">{saveError}</p>}
-            <p className="ml-auto text-[10px] text-ink-faint">enter — new line · alt+↑↓ — move</p>
+
+            <p className="ml-auto font-mono text-[11px] text-ink-faint">
+              {approxSec(seconds)} · {words} words · {written}{" "}
+              {written === 1 ? "beat" : "beats"}
+            </p>
           </div>
+
+          <p className="mt-1 text-right text-[10px] text-ink-faint/70">
+            enter — new line · alt+↑↓ — move · alt+r — role · ctrl+s — save
+          </p>
         </div>
 
         <Guide
@@ -877,6 +1438,24 @@ export function Workspace({
           onRemoveTag={dropTag}
           siblings={siblings}
           pile={pile}
+          story={{
+            videoId,
+            direction,
+            lenses,
+            questions,
+            beats: storyBeats.filter((b) => b.text?.trim()).map((b) => ({
+              id: b.id,
+              text: b.text ?? "",
+            })),
+            tensionSources,
+            loops,
+            aiEnabled,
+            focusedBeatId: focusedId,
+            review,
+            onReview: setReview,
+            onDrafts: (list) => setDrafts(new Map(list.map((d) => [d.beatId, d.text]))),
+            onApplyLine: applyLine,
+          }}
         />
       </div>
     </DndContext>
@@ -943,6 +1522,16 @@ function BeatRow({
   onCycleSection,
   onPark,
   onUnplant,
+  techniqueNames,
+  overlay,
+  flagged,
+  draft,
+  showLoopHeader,
+  loopSec,
+  onCycleLoop,
+  onOpenMenu,
+  roleMenu,
+  danceMenu,
   palette,
   tags,
   onFocusLine,
@@ -957,7 +1546,18 @@ function BeatRow({
   onPasteText: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
   onCycleSection: () => void;
   onPark: () => void;
-  onUnplant: () => void;
+  onUnplant: (componentId: string) => void;
+  techniqueNames: string[];
+  overlay: boolean;
+  flagged: boolean;
+  /** A line the editor drafted for this empty row. Tab accepts it. */
+  draft: string | null;
+  showLoopHeader: boolean;
+  loopSec: number | null;
+  onCycleLoop: () => void;
+  onOpenMenu: (kind: "role" | "dance") => void;
+  roleMenu: React.ReactNode;
+  danceMenu: React.ReactNode;
   palette: React.ReactNode;
   tags: BeatTag[];
   onFocusLine: () => void;
@@ -967,6 +1567,14 @@ function BeatRow({
     id: beat.id,
     data: { type: "beat" },
   });
+
+  // With the overlay off, structure controls sit at zero opacity until the row
+  // is hovered — the same trick the section badge already used. Nothing is
+  // hidden, it is just not shouting at someone mid-sentence.
+  const quiet = (on: boolean) =>
+    on || overlay
+      ? "border-border text-ink-faint"
+      : "border-transparent text-transparent group-hover:border-border-soft group-hover:text-ink-faint";
 
   return (
     <div
@@ -980,7 +1588,50 @@ function BeatRow({
         </p>
       )}
 
+      {showLoopHeader && (
+        <p className="mb-1 mt-2 flex items-baseline gap-2 text-[10px] tracking-wide text-accent/60">
+          LOOP {beat.story_loop}
+          {loopSec != null && (
+            <span className="font-mono text-ink-faint">~{Math.round(loopSec)}s</span>
+          )}
+        </p>
+      )}
+
+      {/* The relation to the line above, drawn in the gap between the two —
+          which is where it actually lives. Only ever on a line that HAS a line
+          above it. */}
+      {index > 0 && (
+        <div className="relative flex h-4 items-center pl-6">
+          <button
+            type="button"
+            onClick={() => onOpenMenu("dance")}
+            title="How does this follow the line above?"
+            className={`rounded px-1 text-[9px] lowercase tracking-wide transition-colors ${
+              beat.dance_relation
+                ? "text-accent/70 hover:text-accent"
+                : overlay
+                  ? "text-ink-faint/40 hover:text-ink-faint"
+                  : "text-transparent group-hover:text-ink-faint/40"
+            }`}
+          >
+            {beat.dance_relation ? DANCE_LABEL[beat.dance_relation as DanceRelation] : "↓"}
+          </button>
+          {danceMenu}
+        </div>
+      )}
+
       <div className="group relative flex items-start gap-2 rounded-md px-1 hover:bg-surface-2/60">
+        {/* Anything the last read-back mentioned gets a mark in the margin. A
+            note that names a line you cannot find is not localised enough to
+            act on. */}
+        {flagged && (
+          <span
+            aria-hidden
+            title="Mentioned in the last read-back"
+            className="absolute -left-2 top-[11px] h-1.5 w-1.5 rounded-full bg-accent/60"
+          />
+        )}
+
         {/* Drag lives on the handle, never on the text — otherwise selecting a
             word with the mouse would pick the whole line up instead. */}
         <button
@@ -991,6 +1642,21 @@ function BeatRow({
           className="mt-[7px] shrink-0 cursor-grab select-none px-0.5 font-mono text-[11px] text-border transition-colors hover:text-ink-dim group-hover:text-ink-faint active:cursor-grabbing"
         >
           ≡
+        </button>
+
+        <button
+          type="button"
+          onClick={onCycleLoop}
+          title="Which loop is this line in?"
+          className={`mt-[7px] shrink-0 font-mono text-[10px] transition-colors ${
+            beat.story_loop != null
+              ? "text-accent/50 hover:text-accent"
+              : overlay
+                ? "text-ink-faint/40 hover:text-ink-faint"
+                : "text-transparent group-hover:text-ink-faint/40"
+          }`}
+        >
+          {beat.story_loop ?? "·"}
         </button>
 
         {/* The underlines are painted by a mirror sitting exactly behind the
@@ -1046,12 +1712,21 @@ function BeatRow({
               onSelectRange(e.currentTarget.selectionStart, e.currentTarget.selectionEnd)
             }
             rows={1}
+            // A drafted line shows as the placeholder — real ghost text in the
+            // row it belongs to, rather than a suggestion in a panel you have
+            // to retype. Tab takes it, Escape drops it.
+            //
+            // Otherwise the role is the prompt: a blank row marked STAKES
+            // asking "stakes…" is a scaffold telling you what it wants, where a
+            // blank row asking nothing is just a blank page.
             placeholder={
-              beat.function_label
-                ? `${beat.function_label}…`
-                : index === 0
-                  ? "Write one thought…"
-                  : ""
+              draft
+                ? draft
+                : beat.story_role
+                  ? `${beat.story_role}…`
+                  : index === 0
+                    ? "Write one thought…"
+                    : ""
             }
             // Inline, because `color: inherit` in globals.css is unlayered and
             // would beat any utility class trying to hide this text.
@@ -1060,19 +1735,34 @@ function BeatRow({
                 ? { color: "transparent", caretColor: "var(--color-ink)" }
                 : undefined
             }
-            className="relative w-full resize-none overflow-hidden bg-transparent py-1.5 outline-none placeholder:text-ink-faint"
+            className={`relative w-full resize-none overflow-hidden bg-transparent py-1.5 outline-none ${
+              draft ? "placeholder:text-accent/40" : "placeholder:text-ink-faint"
+            }`}
           />
+
+          {draft && (
+            <span className="pointer-events-none absolute -bottom-3 left-0 font-mono text-[9px] text-accent/50">
+              tab to keep · esc to drop
+            </span>
+          )}
         </div>
 
-        {beat.function_label && (
-          <button
-            type="button"
-            onClick={onUnplant}
-            title="Remove this technique from the line"
-            className="mt-[7px] shrink-0 text-[10px] tracking-wide text-accent/70 transition-colors hover:text-accent hover:line-through"
-          >
-            {beat.function_label.toUpperCase()}
-          </button>
+        {/* Techniques planted here. Several are normal now, and none of them
+            touch what the line IS — that is the badge next door. */}
+        {beat.techniques.length > 0 && (
+          <span className="mt-[6px] flex shrink-0 flex-wrap justify-end gap-1">
+            {beat.techniques.map((id, i) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onUnplant(id)}
+                title="Remove this technique from the line"
+                className="rounded border border-border-soft px-1 py-px text-[9px] tracking-wide text-accent/70 transition-colors hover:border-accent-dim hover:text-accent hover:line-through"
+              >
+                {(techniqueNames[i] ?? "").toUpperCase()}
+              </button>
+            ))}
+          </span>
         )}
 
         <button
@@ -1085,19 +1775,36 @@ function BeatRow({
           ⌫
         </button>
 
+        {/* What the line is FOR. Survives everything planted on it. */}
+        <button
+          type="button"
+          onClick={() => onOpenMenu("role")}
+          title={
+            beat.story_role
+              ? ROLE_HINT[beat.story_role as StoryRole]
+              : "What is this line for? (alt+r)"
+          }
+          className={`mt-[6px] shrink-0 rounded border px-1.5 py-0.5 text-[10px] tracking-wide transition-colors ${
+            beat.story_role
+              ? "border-accent-dim/50 text-accent/80 hover:text-accent"
+              : quiet(false)
+          }`}
+        >
+          {beat.story_role ? beat.story_role.toUpperCase() : "ROLE"}
+        </button>
+
         <button
           type="button"
           onClick={onCycleSection}
           title="Start / middle / end"
           className={`mt-[6px] shrink-0 rounded border px-1.5 py-0.5 text-[10px] tracking-wide transition-colors ${
-            beat.story_section
-              ? "border-border text-ink-faint"
-              : "border-transparent text-transparent group-hover:border-border-soft group-hover:text-ink-faint"
+            beat.story_section ? "border-border text-ink-faint" : quiet(false)
           }`}
         >
           {beat.story_section ? beat.story_section.toUpperCase() : "SECTION"}
         </button>
 
+        {roleMenu}
         {palette}
       </div>
     </div>

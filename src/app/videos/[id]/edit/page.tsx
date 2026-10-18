@@ -5,7 +5,7 @@ import { beatTimeline, clock } from "@/lib/timing";
 import { SlotCard, type SlotState } from "../slot-card";
 import { ComponentsBody, type PickerComponent } from "../slot-bodies";
 import { updateEditSpec } from "../actions";
-import { loadScript, loadSlots, running } from "../data";
+import { loadPlacements, loadScript, loadSlots, running } from "../data";
 
 export const dynamic = "force-dynamic";
 
@@ -50,13 +50,20 @@ export default async function EditPage({ params }: PageProps<"/videos/[id]/edit"
 
   // A technique planted on a line reports the line's derived time, not a stored
   // number — so it stays right when the words above it are rewritten.
-  const plantedByBeat = new Map<string, string[]>();
-  for (const c of chosen ?? []) {
-    if (!c.anchor_beat_id) continue;
-    const name = (components ?? []).find((x) => x.id === c.component_id)?.name;
-    if (!name) continue;
-    plantedByBeat.set(c.anchor_beat_id, [...(plantedByBeat.get(c.anchor_beat_id) ?? []), name]);
-  }
+  //
+  // Read from script_beat_components rather than video_components.anchor_beat_id
+  // now. The anchor could only hold one beat per technique, so a video that
+  // re-hooks three times showed the re-hook once and silently dropped the other
+  // two — which is precisely the shape EDIT needs to see, because each one is a
+  // cut.
+  const names = new Map((components ?? []).map((c) => [c.id, c.name]));
+  const placements = await loadPlacements(beats.map((b) => b.id));
+  const plantedByBeat = new Map<string, string[]>(
+    [...placements].map(([beatId, ids]) => [
+      beatId,
+      ids.map((id) => names.get(id)).filter((n): n is string => Boolean(n)),
+    ]),
+  );
 
   const editSlots = slots.active.filter(
     (s) => s.workflow_stage === "edit" || s.workflow_stage === "shared",
@@ -122,6 +129,16 @@ export default async function EditPage({ params }: PageProps<"/videos/[id]/edit"
                       <p className="text-sm leading-relaxed text-ink-dim">
                         {beat.text || <span className="text-ink-faint">(empty line)</span>}
                       </p>
+
+                      {/* The story reason for the beat, inherited read-only.
+                          EDIT decides how a re-hook is delivered — the cut, the
+                          punch-in, the caption — and needs to know that it IS
+                          one. It does not get to change that here. */}
+                      {beat.story_role && (
+                        <span className="mr-1.5 mt-1 inline-block text-[10px] tracking-wide text-ink-faint">
+                          {beat.story_role.toUpperCase()}
+                        </span>
+                      )}
                       {plantedByBeat.get(beat.id)?.map((name) => (
                         <span
                           key={name}

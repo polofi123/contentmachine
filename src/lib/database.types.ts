@@ -34,6 +34,198 @@ export type Database = {
   }
   public: {
     Tables: {
+      analysis_finding_library_refs: {
+        Row: {
+          component_id: string
+          created_at: string
+          finding_id: string
+          id: string
+          is_primary: boolean
+          relevance: number | null
+          supporting_text: string
+        }
+        Insert: {
+          component_id: string
+          created_at?: string
+          finding_id: string
+          id?: string
+          is_primary?: boolean
+          relevance?: number | null
+          supporting_text: string
+        }
+        Update: {
+          component_id?: string
+          created_at?: string
+          finding_id?: string
+          id?: string
+          is_primary?: boolean
+          relevance?: number | null
+          supporting_text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analysis_finding_library_refs_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "component_performance"
+            referencedColumns: ["component_id"]
+          },
+          {
+            foreignKeyName: "analysis_finding_library_refs_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "components"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analysis_finding_library_refs_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "library_mechanism_usage"
+            referencedColumns: ["component_id"]
+          },
+          {
+            foreignKeyName: "analysis_finding_library_refs_finding_id_fkey"
+            columns: ["finding_id"]
+            isOneToOne: false
+            referencedRelation: "analysis_findings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      analysis_findings: {
+        Row: {
+          applied_text: string | null
+          confidence: number | null
+          created_at: string
+          diagnosis: string
+          diagnosis_type: string
+          edited: boolean
+          evidence: Json
+          id: string
+          intended_effect: string
+          operation: Json
+          priority: string
+          run_id: string
+          scope: string
+          state: string
+          updated_at: string
+          why_applicable: string
+        }
+        Insert: {
+          applied_text?: string | null
+          confidence?: number | null
+          created_at?: string
+          diagnosis: string
+          diagnosis_type: string
+          edited?: boolean
+          evidence: Json
+          id?: string
+          intended_effect: string
+          operation: Json
+          priority?: string
+          run_id: string
+          scope?: string
+          state?: string
+          updated_at?: string
+          why_applicable: string
+        }
+        Update: {
+          applied_text?: string | null
+          confidence?: number | null
+          created_at?: string
+          diagnosis?: string
+          diagnosis_type?: string
+          edited?: boolean
+          evidence?: Json
+          id?: string
+          intended_effect?: string
+          operation?: Json
+          priority?: string
+          run_id?: string
+          scope?: string
+          state?: string
+          updated_at?: string
+          why_applicable?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analysis_findings_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "analysis_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      analysis_runs: {
+        Row: {
+          created_at: string
+          id: string
+          library_citable: number | null
+          library_total: number | null
+          model: string
+          script_version_id: string
+          story_map: Json | null
+          summary: Json | null
+          trace: Json | null
+          video_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          library_citable?: number | null
+          library_total?: number | null
+          model: string
+          script_version_id: string
+          story_map?: Json | null
+          summary?: Json | null
+          trace?: Json | null
+          video_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          library_citable?: number | null
+          library_total?: number | null
+          model?: string
+          script_version_id?: string
+          story_map?: Json | null
+          summary?: Json | null
+          trace?: Json | null
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analysis_runs_script_version_id_fkey"
+            columns: ["script_version_id"]
+            isOneToOne: false
+            referencedRelation: "script_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analysis_runs_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_completeness"
+            referencedColumns: ["video_id"]
+          },
+          {
+            foreignKeyName: "analysis_runs_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analysis_runs_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       components: {
         Row: {
           archived_at: string | null
@@ -102,6 +294,13 @@ export type Database = {
             referencedRelation: "components"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "components_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "library_mechanism_usage"
+            referencedColumns: ["component_id"]
+          },
         ]
       }
       hook_word_tags: {
@@ -140,6 +339,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "components"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hook_word_tags_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "library_mechanism_usage"
+            referencedColumns: ["component_id"]
           },
           {
             foreignKeyName: "hook_word_tags_hook_id_fkey"
@@ -343,6 +549,56 @@ export type Database = {
           },
         ]
       }
+      script_beat_components: {
+        Row: {
+          component_id: string
+          created_at: string
+          id: string
+          script_beat_id: string
+        }
+        Insert: {
+          component_id: string
+          created_at?: string
+          id?: string
+          script_beat_id: string
+        }
+        Update: {
+          component_id?: string
+          created_at?: string
+          id?: string
+          script_beat_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "script_beat_components_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "component_performance"
+            referencedColumns: ["component_id"]
+          },
+          {
+            foreignKeyName: "script_beat_components_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "components"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "script_beat_components_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "library_mechanism_usage"
+            referencedColumns: ["component_id"]
+          },
+          {
+            foreignKeyName: "script_beat_components_script_beat_id_fkey"
+            columns: ["script_beat_id"]
+            isOneToOne: false
+            referencedRelation: "script_beats"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       script_beat_tags: {
         Row: {
           beat_id: string
@@ -393,17 +649,27 @@ export type Database = {
             referencedRelation: "components"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "script_beat_tags_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "library_mechanism_usage"
+            referencedColumns: ["component_id"]
+          },
         ]
       }
       script_beats: {
         Row: {
           created_at: string
+          dance_relation: string | null
           function_component_id: string | null
           function_label: string | null
           id: string
           parked: boolean
           script_id: string
           sort_order: number
+          story_loop: number | null
+          story_role: string | null
           story_section: string | null
           t_end_sec: number | null
           t_start_sec: number | null
@@ -412,12 +678,15 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          dance_relation?: string | null
           function_component_id?: string | null
           function_label?: string | null
           id?: string
           parked?: boolean
           script_id: string
           sort_order?: number
+          story_loop?: number | null
+          story_role?: string | null
           story_section?: string | null
           t_end_sec?: number | null
           t_start_sec?: number | null
@@ -426,12 +695,15 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          dance_relation?: string | null
           function_component_id?: string | null
           function_label?: string | null
           id?: string
           parked?: boolean
           script_id?: string
           sort_order?: number
+          story_loop?: number | null
+          story_role?: string | null
           story_section?: string | null
           t_end_sec?: number | null
           t_start_sec?: number | null
@@ -454,7 +726,59 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "script_beats_function_component_id_fkey"
+            columns: ["function_component_id"]
+            isOneToOne: false
+            referencedRelation: "library_mechanism_usage"
+            referencedColumns: ["component_id"]
+          },
+          {
             foreignKeyName: "script_beats_script_id_fkey"
+            columns: ["script_id"]
+            isOneToOne: false
+            referencedRelation: "scripts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      script_versions: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          label: string | null
+          parent_version_id: string | null
+          script_id: string
+          segments: Json
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          label?: string | null
+          parent_version_id?: string | null
+          script_id: string
+          segments: Json
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          label?: string | null
+          parent_version_id?: string | null
+          script_id?: string
+          segments?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "script_versions_parent_version_id_fkey"
+            columns: ["parent_version_id"]
+            isOneToOne: false
+            referencedRelation: "script_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "script_versions_script_id_fkey"
             columns: ["script_id"]
             isOneToOne: false
             referencedRelation: "scripts"
@@ -561,6 +885,233 @@ export type Database = {
           },
         ]
       }
+      story_direction: {
+        Row: {
+          created_at: string
+          destination: string | null
+          final_thought: string | null
+          id: string
+          meaning: string | null
+          starting_belief: string | null
+          tense: string | null
+          updated_at: string
+          video_id: string
+        }
+        Insert: {
+          created_at?: string
+          destination?: string | null
+          final_thought?: string | null
+          id?: string
+          meaning?: string | null
+          starting_belief?: string | null
+          tense?: string | null
+          updated_at?: string
+          video_id: string
+        }
+        Update: {
+          created_at?: string
+          destination?: string | null
+          final_thought?: string | null
+          id?: string
+          meaning?: string | null
+          starting_belief?: string | null
+          tense?: string | null
+          updated_at?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "story_direction_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: true
+            referencedRelation: "video_completeness"
+            referencedColumns: ["video_id"]
+          },
+          {
+            foreignKeyName: "story_direction_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: true
+            referencedRelation: "video_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "story_direction_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: true
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      story_lenses: {
+        Row: {
+          component_id: string | null
+          created_at: string
+          id: string
+          is_selected: boolean
+          notes: string | null
+          text: string
+          tier: string | null
+          updated_at: string
+          video_id: string
+        }
+        Insert: {
+          component_id?: string | null
+          created_at?: string
+          id?: string
+          is_selected?: boolean
+          notes?: string | null
+          text: string
+          tier?: string | null
+          updated_at?: string
+          video_id: string
+        }
+        Update: {
+          component_id?: string | null
+          created_at?: string
+          id?: string
+          is_selected?: boolean
+          notes?: string | null
+          text?: string
+          tier?: string | null
+          updated_at?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "story_lenses_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "component_performance"
+            referencedColumns: ["component_id"]
+          },
+          {
+            foreignKeyName: "story_lenses_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "components"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "story_lenses_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "library_mechanism_usage"
+            referencedColumns: ["component_id"]
+          },
+          {
+            foreignKeyName: "story_lenses_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_completeness"
+            referencedColumns: ["video_id"]
+          },
+          {
+            foreignKeyName: "story_lenses_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "story_lenses_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      story_questions: {
+        Row: {
+          answered_beat_id: string | null
+          created_at: string
+          id: string
+          opened_beat_id: string | null
+          source_component_id: string | null
+          text: string
+          updated_at: string
+          video_id: string
+        }
+        Insert: {
+          answered_beat_id?: string | null
+          created_at?: string
+          id?: string
+          opened_beat_id?: string | null
+          source_component_id?: string | null
+          text: string
+          updated_at?: string
+          video_id: string
+        }
+        Update: {
+          answered_beat_id?: string | null
+          created_at?: string
+          id?: string
+          opened_beat_id?: string | null
+          source_component_id?: string | null
+          text?: string
+          updated_at?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "story_questions_answered_beat_id_fkey"
+            columns: ["answered_beat_id"]
+            isOneToOne: false
+            referencedRelation: "script_beats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "story_questions_opened_beat_id_fkey"
+            columns: ["opened_beat_id"]
+            isOneToOne: false
+            referencedRelation: "script_beats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "story_questions_source_component_id_fkey"
+            columns: ["source_component_id"]
+            isOneToOne: false
+            referencedRelation: "component_performance"
+            referencedColumns: ["component_id"]
+          },
+          {
+            foreignKeyName: "story_questions_source_component_id_fkey"
+            columns: ["source_component_id"]
+            isOneToOne: false
+            referencedRelation: "components"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "story_questions_source_component_id_fkey"
+            columns: ["source_component_id"]
+            isOneToOne: false
+            referencedRelation: "library_mechanism_usage"
+            referencedColumns: ["component_id"]
+          },
+          {
+            foreignKeyName: "story_questions_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_completeness"
+            referencedColumns: ["video_id"]
+          },
+          {
+            foreignKeyName: "story_questions_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "story_questions_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       video_components: {
         Row: {
           anchor_beat_id: string | null
@@ -619,6 +1170,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "components"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "video_components_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "library_mechanism_usage"
+            referencedColumns: ["component_id"]
           },
           {
             foreignKeyName: "video_components_video_id_fkey"
@@ -854,6 +1412,30 @@ export type Database = {
           source_id: string | null
           videos_skipped: number | null
           videos_used: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "components_layer_id_fkey"
+            columns: ["layer_id"]
+            isOneToOne: false
+            referencedRelation: "layers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_mechanism_usage: {
+        Row: {
+          avg_model_confidence: number | null
+          avg_retrieval_relevance: number | null
+          component_id: string | null
+          layer_id: string | null
+          name: string | null
+          source_id: string | null
+          times_accepted: number | null
+          times_applied: number | null
+          times_edited_first: number | null
+          times_recommended: number | null
+          times_rejected: number | null
         }
         Relationships: [
           {

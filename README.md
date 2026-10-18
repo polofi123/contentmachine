@@ -72,9 +72,58 @@ Never a gate. It shows what you left on the table, then lets you ship.
 
 - `/capture` — one field, one button. Fast capture or the tool goes unused. `build` promotes
   an idea into a video in one tap.
+- `/hooks` — the same bargain for hook lines. See below.
 - `/library` — every component, layer-grouped and nested, full CRUD, archive not delete.
 - `/videos` — mine and outliers in one list, each with its completeness meter.
 - `/videos/[id]` — the workbench.
+- `/videos/[id]/ship` — the read view. The whole script as one block of prose, at a
+  size you can read from behind a camera, with a copy button; then the URL, the date
+  and the view counts, whenever you get round to them.
+
+### The hook bank was already in the schema
+
+`/hooks` did not need a table. A bank hook is a `hooks` row with no `video_id` —
+`hooks_bank_idx` has always indexed exactly those rows, the workbench's "pull from the
+bank" has always read them, and `HOOK-06` is a seeded component literally named *Hook
+bank* whose ten lines are seeded into it. The screen is a front door to a room that was
+already built, which is why tagging a line here means it arrives at a video already
+marked up: same `hook_word_tags` rows either way.
+
+Three things it does beyond capture:
+
+- **The Six Hook Words as chips.** `HOOKW-01..06`, tapped on or off. A line missing any
+  of the *four core* words says so; Time and Proof say "Optional" in their own bodies, so
+  a hook without them is not incomplete. Calling it incomplete would train you to bolt
+  "in 30 days" onto hooks that never needed it.
+- **Prompts.** `HOOK-16`'s eighteen questions, collapsed, wired to nothing. They are there
+  to spark the next line, not to be ticked — the moment a checklist can be completed it
+  becomes eighteen chores per hook, and you write three hooks a month instead of thirty.
+- **Riff.** Asks Claude for three variations against the six word types, using the word
+  definitions read live out of `/library` rather than a private copy in the prompt.
+  **Riffs are not rows.** They sit on screen until you tap `keep`. Same rule as the
+  storytelling panel: the model proposes, you decide, and the bank only ever holds lines
+  a person chose. Hidden entirely when there is no `ANTHROPIC_API_KEY`.
+
+`build` copies the line onto a new video and selects it, carrying its word tags, and
+**leaves the bank intact** — that is `useBankHook`'s existing rule, not a new one. A hook
+shape that worked once is worth reaching for again, and a bank that empties itself every
+time you build is empty when you need it. `drop` is scoped to `video_id is null`, so this
+screen can never delete a line out of a script.
+
+`/plan` carries a three-line peek at the bank with a count, because the bank is not
+month-scoped and the work belongs on `/hooks` — it is there to remind you the lines exist
+while you are deciding what to make.
+
+### SHIP is the only view that is not a workspace
+
+MAKE, STUDY and EDIT all exist to change the video. SHIP exists to take it out of the
+app — read it aloud, paste it into a prompter — and to bring the result back in weeks
+later. Those are one screen on purpose: the numbers belong beside the words that
+earned them, and a script you never reopen is a video whose views never get typed in.
+
+Two flavours of the same text, from one function (`lib/script-text.ts`), so what is on
+screen and what lands on the clipboard cannot drift apart: **words only** for reading
+out loud, **with marks** for section headers, derived timestamps and story roles.
 
 ### The workbench is a document, not a wizard
 
@@ -101,8 +150,13 @@ ready for it; see the sample-size warning below before building it.
 
 View counts are entered by hand — no platform APIs, by design. This is the likeliest
 thing to rot: in three weeks the numbers won't be there and the performance loop will
-have nothing to chew on. `videos.platform_video_id` is stored so a read-only YouTube
-Data API fetch is a small drop-in later.
+have nothing to chew on. SHIP is where they get typed, next to the script rather than
+on a screen of their own, which is the cheapest defence available.
+
+`videos.platform_video_id` is stored so a read-only YouTube Data API fetch is a small
+drop-in later — and SHIP reads it, and the platform, straight out of the pasted URL
+(`lib/platform.ts`, parsing only, no network), because a column nobody fills by hand
+is a column that will be empty when the fetch is finally written.
 
 When `/insights` is built it must show raw comparisons with explicit sample sizes, never
 a correlation coefficient — at n=5 a correlation is a coin flip you would nonetheless

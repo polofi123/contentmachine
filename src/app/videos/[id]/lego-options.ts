@@ -51,26 +51,18 @@ export const WORD_TYPE_COLORS: Record<string, string> = {
   "HOOKW-06": "#7fb2d9", // Proof
 };
 
-/**
- * What a line teaches when the caret is inside it.
- *
- * Keyed by the label the skeleton gives a line. Relabelling a line through the
- * slash palette links a real component, which wins over this table — this is
- * the fallback for the scaffold's own free-text labels.
- */
-export const LABEL_TEACHES: Record<string, string> = {
-  hook: "HOOK-02",
-  foreshadow: "SCR-03",
-  transition: "SCR-03",
-  stakes: "LOOP-01",
-  "big question": "LOOP-02",
-  "head fake": "LOOP-03",
-  rehook: "LOOP-04",
-  payoff: "SCR-02",
-  cta: "CTA-01",
-};
+// LABEL_TEACHES lived here and has moved to story-vocab.ts as ROLE_TEACHES.
+//
+// It was keyed by the free-text label the skeleton gave a line, which meant a
+// line only taught anything while nobody had renamed it — and planting a
+// technique renamed it. Keying by story_role instead means the mapping cannot
+// be broken by a typo or silently lost by tagging.
 
-/** Lines whose words can be tagged, and the layer of types they tag with. */
+/**
+ * Roles whose words can be tagged, and the layer of types they tag with.
+ *
+ * Keyed by story_role now, for the same reason as ROLE_TEACHES.
+ */
 export const WORD_TAGGABLE: Record<string, string> = {
   hook: "hook_word",
 };

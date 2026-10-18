@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { loadScript, loadSlots, running } from "../data";
+import { aiConfigured } from "@/lib/ai";
+import { loadPlacements, loadScript, loadSlots, loadStory, running } from "../data";
 import { SlotStack } from "../slot-stack";
-import { LABEL_TEACHES, WORD_TAGGABLE } from "../lego-options";
+import { WORD_TAGGABLE } from "../lego-options";
+import { ROLE_TEACHES } from "../story-vocab";
 import { Workspace, type WorkspaceBeat, type GuideComponent, type BeatTag } from "./workspace";
 import type { PileItem } from "./pile";
 import type { PaletteComponent } from "./palette";
@@ -17,11 +19,12 @@ export const dynamic = "force-dynamic";
 export default async function MakePage({ params }: PageProps<"/videos/[id]/make">) {
   const { id } = await params;
 
-  const [{ data: video }, script, slots, { data: hooks }, { data: bank }, { data: ideas }, { data: components }, { data: layers }, { data: chosen }] =
+  const [{ data: video }, script, slots, story, { data: hooks }, { data: bank }, { data: ideas }, { data: components }, { data: layers }, { data: chosen }] =
     await Promise.all([
       db.from("videos").select("id, lego_angle").eq("id", id).maybeSingle(),
       loadScript(id),
       loadSlots(id),
+      loadStory(id),
       db.from("hooks").select("id, text, is_selected").eq("video_id", id).order("created_at"),
       db.from("hooks").select("id, text").is("video_id", null).order("created_at"),
       db
@@ -41,13 +44,17 @@ export default async function MakePage({ params }: PageProps<"/videos/[id]/make"
 
   if (!video) notFound();
 
+  const placements = await loadPlacements(script.beats.map((b) => b.id));
+
   const beats: WorkspaceBeat[] = running(script.beats).map((b) => ({
     id: b.id,
     text: b.text ?? "",
     story_section: b.story_section,
     t_start_sec: b.t_start_sec,
-    function_label: b.function_label,
-    function_component_id: b.function_component_id,
+    story_role: b.story_role,
+    dance_relation: b.dance_relation,
+    story_loop: b.story_loop,
+    techniques: placements.get(b.id) ?? [],
   }));
 
   // Three kinds of loose brick, deliberately kept apart: a line cut from this
@@ -128,13 +135,13 @@ export default async function MakePage({ params }: PageProps<"/videos/[id]/make"
       s.layer_id !== "checkpoint",
   );
 
-  // Only the components the guide can actually reach: what the scaffold labels
-  // point at, their children, the hook-word types, and anything a line has been
-  // relabelled to. Shipping all 262 bodies to the browser to show one at a time
-  // would be most of a megabyte for nothing.
-  const teachSources = new Set(Object.values(LABEL_TEACHES));
+  // Only the components the guide can actually reach: what the story roles
+  // point at, their children, the hook-word types, and anything planted on a
+  // line. Shipping all 280 bodies to the browser to show one at a time would be
+  // most of a megabyte for nothing.
+  const teachSources = new Set(Object.values(ROLE_TEACHES));
   const taggableLayers = new Set(Object.values(WORD_TAGGABLE));
-  const linked = new Set(script.beats.map((b) => b.function_component_id).filter(Boolean));
+  const linked = new Set([...placements.values()].flat());
 
   const roots = (components ?? []).filter(
     (c) =>
@@ -192,6 +199,16 @@ export default async function MakePage({ params }: PageProps<"/videos/[id]/make"
         targetSec={script.durationTargetSec}
         guideComponents={guideComponents}
         initialTags={initialTags}
+        direction={story.direction}
+        lenses={story.lenses}
+        questions={story.questions}
+        // The eleven ways of creating uncertainty, so a question can record
+        // which kind it is. Data-driven like everything else: naming a
+        // twelfth in /library puts it on this list.
+        tensionSources={named
+          .filter((c) => c.layer_id === "tension")
+          .map((c) => ({ id: c.id, source_id: c.source_id, name: c.name }))}
+        aiEnabled={aiConfigured()}
       />
 
       {stackSlots.length > 0 && (

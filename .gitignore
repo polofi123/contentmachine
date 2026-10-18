@@ -44,3 +44,16 @@ dev.log
 # Supabase local state
 supabase/.branches
 supabase/.temp
+
+# Local data backups taken before db:reset. Your writing, not the framework.
+supabase/backups/
+node_modules/
+.next/
+.env
+.env.*
+!.env.example
+*.pem
+*.log
+dist/
+coverage/
+.vercel/

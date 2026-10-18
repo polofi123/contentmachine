@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { LegoField, LegoOption } from "./lego-options";
+import { STORY_ROLES } from "./story-vocab";
 import {
   updateLegos,
   setLoopType,
@@ -521,7 +522,7 @@ export type BeatRow = {
   sort_order: number;
   t_start_sec: number | null;
   t_end_sec: number | null;
-  function_label: string | null;
+  story_role: string | null;
   text: string | null;
 };
 
@@ -533,6 +534,38 @@ export type ScriptRow = {
   edit_spec: string | null;
   beats: BeatRow[];
 };
+
+/**
+ * The role vocabulary as a plain select.
+ *
+ * This card used to take a free-text beat label, which is how the same field
+ * ended up meaning both "what this line is for" and "which technique is on it".
+ * A closed list can only ever mean the first, and it matches what the outliner
+ * writes — two paths into the same column that disagreed about its contents
+ * would be worse than either.
+ */
+function RoleSelect({
+  defaultValue,
+  className,
+}: {
+  defaultValue: string | null;
+  className: string;
+}) {
+  return (
+    <select
+      name="story_role"
+      defaultValue={defaultValue ?? ""}
+      className={`${className} rounded border border-border bg-surface px-1.5 py-1 text-xs text-ink-dim outline-none`}
+    >
+      <option value="">no role</option>
+      {STORY_ROLES.map((role) => (
+        <option key={role} value={role}>
+          {role}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 export function ScriptBody({ videoId, scripts }: { videoId: string; scripts: ScriptRow[] }) {
   const [editingBeat, setEditingBeat] = useState<string | null>(null);
@@ -581,12 +614,7 @@ export function ScriptBody({ videoId, scripts }: { videoId: string; scripts: Scr
                       placeholder="to"
                       className="w-16 rounded border border-border bg-surface px-1.5 py-1 text-xs outline-none"
                     />
-                    <input
-                      name="function_label"
-                      defaultValue={b.function_label ?? ""}
-                      placeholder="Re-hook"
-                      className="min-w-0 flex-1 rounded border border-border bg-surface px-1.5 py-1 text-xs outline-none"
-                    />
+                    <RoleSelect defaultValue={b.story_role} className="min-w-0 flex-1" />
                   </div>
                   <textarea
                     name="text"
@@ -612,8 +640,10 @@ export function ScriptBody({ videoId, scripts }: { videoId: string; scripts: Scr
                     {b.t_start_sec != null ? `${b.t_start_sec}–${b.t_end_sec ?? ""}s` : "—"}
                   </span>
                   <span className="min-w-0 flex-1">
-                    {b.function_label && (
-                      <span className="block text-[11px] text-accent/70">{b.function_label}</span>
+                    {b.story_role && (
+                      <span className="block text-[11px] uppercase tracking-wide text-accent/70">
+                        {b.story_role}
+                      </span>
                     )}
                     <span className="block text-xs text-ink-dim">{b.text}</span>
                   </span>
@@ -649,11 +679,7 @@ export function ScriptBody({ videoId, scripts }: { videoId: string; scripts: Scr
               placeholder="from"
               className="w-16 rounded border border-border bg-surface-2 px-1.5 py-1 text-xs outline-none"
             />
-            <input
-              name="function_label"
-              placeholder="Beat function"
-              className="w-32 rounded border border-border bg-surface-2 px-1.5 py-1 text-xs outline-none"
-            />
+            <RoleSelect defaultValue={null} className="w-32" />
             <input
               name="text"
               placeholder="Line"

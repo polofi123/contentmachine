@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { WORD_TYPE_COLORS } from "../lego-options";
 import { Pile, type PileItem } from "./pile";
+import { StoryPanel } from "./story-panel";
 
 export type WordType = {
   id: string;
@@ -39,6 +40,11 @@ export const colorFor = (sourceId: string | null | undefined) =>
  *
  * The idea pile moves behind a tab. It was taking a third of the screen to show
  * things that are useful occasionally; this is useful continuously.
+ *
+ * STORY is the third tab and shares the rail for the same reason: direction,
+ * lens and open questions are things you decide WHILE writing, and a panel you
+ * have to navigate to is a panel you stop opening. Three tabs is the ceiling —
+ * the rail is a place to glance at, not a second workspace.
  */
 export function Guide({
   label,
@@ -50,6 +56,7 @@ export function Guide({
   onRemoveTag,
   siblings,
   pile,
+  story,
 }: {
   label: string | null;
   teaching: Teaching | null;
@@ -60,8 +67,9 @@ export function Guide({
   onRemoveTag: (tagId: string) => void;
   siblings: { id: string; source_id: string | null; name: string; body: string | null }[];
   pile: PileItem[];
+  story: React.ComponentProps<typeof StoryPanel>;
 }) {
-  const [tab, setTab] = useState<"guide" | "pile">("guide");
+  const [tab, setTab] = useState<"guide" | "story" | "pile">("guide");
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const tabClass = (on: boolean) =>
@@ -70,17 +78,29 @@ export function Guide({
     }`;
 
   return (
-    <aside className="w-[38%] shrink-0">
+    // Sticky, so the rail follows you up the script instead of scrolling away.
+    //
+    // This panel is about the line you are standing on — the teaching for it,
+    // the review of it. All of that is useless if reaching the line means
+    // leaving the panel behind, which is what a normal column does on a script
+    // longer than a screen. It scrolls internally when its own content is
+    // taller than the viewport.
+    <aside className="sticky top-16 max-h-[calc(100vh-5rem)] w-[38%] shrink-0 self-start overflow-y-auto">
       <div className="mb-2 flex gap-0.5 rounded-lg border border-border-soft p-0.5">
         <button type="button" onClick={() => setTab("guide")} className={tabClass(tab === "guide")}>
           GUIDE
+        </button>
+        <button type="button" onClick={() => setTab("story")} className={tabClass(tab === "story")}>
+          STORY
         </button>
         <button type="button" onClick={() => setTab("pile")} className={tabClass(tab === "pile")}>
           PILE
         </button>
       </div>
 
-      {tab === "pile" ? (
+      {tab === "story" ? (
+        <StoryPanel {...story} />
+      ) : tab === "pile" ? (
         <Pile items={pile} bare />
       ) : (
         <div className="rounded-xl border border-border-soft px-3 py-3">

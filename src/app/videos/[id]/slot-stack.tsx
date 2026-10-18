@@ -65,7 +65,7 @@ export async function SlotStack({
     db
       .from("scripts")
       .select(
-        "id, name, format, duration_target_sec, edit_spec, script_beats(id, sort_order, t_start_sec, t_end_sec, function_label, text)",
+        "id, name, format, duration_target_sec, edit_spec, script_beats(id, sort_order, t_start_sec, t_end_sec, story_role, text)",
       )
       .eq("video_id", videoId)
       .order("created_at"),

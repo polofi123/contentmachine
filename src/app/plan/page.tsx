@@ -19,8 +19,15 @@ export default async function PlanPage({ searchParams }: PageProps<"/plan">) {
   const daysInMonth = new Date(year, month, 0).getDate();
   const monthEnd = iso(year, month, daysInMonth);
 
-  const [{ data: goal }, { data: scheduled }, { data: mix }, { data: backlog }, { data: ideas }, { data: pillars }] =
-    await Promise.all([
+  const [
+    { data: goal },
+    { data: scheduled },
+    { data: mix },
+    { data: backlog },
+    { data: ideas },
+    { data: pillars },
+    { data: loose, count: looseCount },
+  ] = await Promise.all([
       db.from("plan_goals").select("month, target_posts, note").eq("month", monthKey).maybeSingle(),
       db
         .from("videos")
@@ -45,6 +52,15 @@ export default async function PlanPage({ searchParams }: PageProps<"/plan">) {
         .order("created_at", { ascending: false })
         .limit(40),
       db.from("videos").select("pillar").not("pillar", "is", null),
+      // The hook bank is not month-scoped, so it is a peek rather than a
+      // section: enough to remind you the lines are there while you are
+      // deciding what to make, with the work itself living on /hooks.
+      db
+        .from("hooks")
+        .select("id, text", { count: "exact" })
+        .is("video_id", null)
+        .order("created_at", { ascending: false })
+        .limit(3),
     ]);
 
   const ids = (scheduled ?? []).map((v) => v.id);
@@ -180,6 +196,40 @@ export default async function PlanPage({ searchParams }: PageProps<"/plan">) {
         month={month}
         daysInMonth={daysInMonth}
       />
+
+      <section className="mt-8">
+        <div className="mb-2 flex items-baseline justify-between border-b border-border-soft pb-2">
+          <h2 className="text-sm font-medium text-ink">Hook bank</h2>
+          <Link href="/hooks" className="text-[11px] text-ink-faint hover:text-accent">
+            {looseCount ?? 0} loose →
+          </Link>
+        </div>
+
+        {(loose?.length ?? 0) === 0 ? (
+          <p className="py-4 text-sm text-ink-faint">
+            Nothing loose.{" "}
+            <Link href="/hooks" className="hover:text-accent">
+              Write some
+            </Link>{" "}
+            before you need them.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border-soft">
+            {(loose ?? []).map((h) => (
+              <li key={h.id} className="py-2 text-sm text-ink-dim">
+                {h.text}
+              </li>
+            ))}
+            {(looseCount ?? 0) > (loose?.length ?? 0) && (
+              <li className="py-2">
+                <Link href="/hooks" className="text-[11px] text-ink-faint hover:text-accent">
+                  + {(looseCount ?? 0) - (loose?.length ?? 0)} more
+                </Link>
+              </li>
+            )}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

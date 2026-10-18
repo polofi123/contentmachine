@@ -3,23 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-
-// A new video starts with the default slot template rather than zero slots.
-// "Everything optional, everything extensible" with no starting opinion is just
-// a blank page — the template is the counterweight, and every slot on it can be
-// dropped in one click.
-async function seedDefaultSlots(videoId: string) {
-  const { data: slots } = await db
-    .from("slots")
-    .select("key")
-    .eq("in_default_template", true);
-
-  if (!slots?.length) return;
-
-  await db
-    .from("video_slots")
-    .insert(slots.map((s) => ({ video_id: videoId, slot_key: s.key, state: "empty" })));
-}
+import { seedDefaultSlots } from "./slot-seed";
 
 export async function createVideo(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();

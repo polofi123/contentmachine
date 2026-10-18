@@ -84,3 +84,56 @@ left join video_latest_metrics lm on lm.video_id = v.id
 where lm.views > 10000
 group by c.name, c.source_id
 order by videos_used desc;
+
+\echo ''
+\echo '=== 12. Story engine — vocabulary seeded ==='
+select case
+         when (select count(*) from components where layer_id = 'tension') = 11
+          and (select count(*) from components where layer_id = 'lens')    = 6
+          and (select count(*) from components where layer_id = 'story')   = 21
+         then 'PASS'
+         else 'FAIL — tension ' || (select count(*) from components where layer_id = 'tension')
+              || ', lens '       || (select count(*) from components where layer_id = 'lens')
+              || ', story '      || (select count(*) from components where layer_id = 'story')
+       end;
+
+\echo ''
+\echo '=== 13. Story overlay — roles carried over from the old labels ==='
+\echo 'Deliberately partial: technique-ish labels (Pattern interrupt, Value stack)'
+\echo 'stay NULL, because they name a technique rather than a job in the arc.'
+select coalesce(story_role, '(none)') as story_role, count(*)
+from script_beats
+where function_label is not null
+group by 1 order by 2 desc;
+
+\echo ''
+\echo '=== 14. Placement — a technique can sit on several lines of one video ==='
+\echo 'The thing video_components.anchor_beat_id could never express.'
+select c.name, count(distinct sbc.script_beat_id) as lines_used
+from script_beat_components sbc
+join components c on c.id = sbc.component_id
+group by c.name
+having count(distinct sbc.script_beat_id) > 1
+order by 2 desc;
+
+\echo ''
+\echo '=== 15. Placement agrees with the analytical state ==='
+\echo 'Every placed technique must have a video_components row. A placement the'
+\echo 'analysis cannot see is the one failure mode this join could introduce.'
+select case when count(*) = 0 then 'PASS'
+            else 'FAIL — ' || count(*) || ' placement(s) with no video_components row' end
+from script_beat_components sbc
+join script_beats b on b.id = sbc.script_beat_id
+join scripts s      on s.id = b.script_id
+left join video_components vc
+       on vc.video_id = s.video_id and vc.component_id = sbc.component_id
+where vc.id is null;
+
+\echo ''
+\echo '=== 16. At most one chosen lens per video ==='
+select case when count(*) = 0 then 'PASS'
+            else 'FAIL — ' || count(*) || ' video(s) with more than one' end
+from (
+  select video_id from story_lenses where is_selected
+  group by video_id having count(*) > 1
+) x;

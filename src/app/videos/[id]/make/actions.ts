@@ -18,7 +18,10 @@ export type NewBeat = {
   id: string;
   text: string;
   story_section: string | null;
-  function_label?: string | null;
+  /** What the line is for. The skeleton arrives carrying these. */
+  story_role?: string | null;
+  /** Which attention cycle it belongs to. The skeleton carries these too. */
+  story_loop?: number | null;
 };
 
 /**
@@ -123,7 +126,8 @@ export async function createBeats(
       sort_order: orderedIds.indexOf(b.id) + 1,
       text: b.text || null,
       story_section: b.story_section,
-      function_label: b.function_label ?? null,
+      story_role: b.story_role ?? null,
+      story_loop: b.story_loop ?? null,
     })),
   );
 
@@ -221,73 +225,16 @@ export async function setBeatSection(
   touch(videoId);
 }
 
-/**
- * Plant a technique on a beat. One gesture, two facts:
- *
- *   1. the beat now says what it is DOING      (script_beats.function_*)
- *   2. the video now records the technique     (video_components)
- *
- * They are separate rows because they answer separate questions — "what is this
- * line for" and "did this video use Re-hooking, and where" — but in the writer's
- * head it is a single move, so it should cost a single move.
- *
- * placement_sec is left NULL on purpose. The anchor is the truth; placement is
- * derived from the beat timeline at read time, so it stays right when the words
- * above it change. Typing a number into a box in a different card is the thing
- * this replaces.
- *
- * Note the shape of the existing unique (video_id, component_id): planting the
- * same technique on a second beat MOVES it rather than recording it twice.
- */
-export async function plantComponent(
-  videoId: string,
-  beatId: string,
-  componentId: string,
-  name: string,
-) {
-  const { error: beatErr } = await db
-    .from("script_beats")
-    .update({ function_component_id: componentId, function_label: name })
-    .eq("id", beatId);
-
-  if (beatErr) throw new Error(`Could not label that line: ${beatErr.message}`);
-
-  const { error } = await db.from("video_components").upsert(
-    {
-      video_id: videoId,
-      component_id: componentId,
-      state: "used",
-      anchor_beat_id: beatId,
-      placement_sec: null,
-    },
-    { onConflict: "video_id,component_id" },
-  );
-
-  if (error) throw new Error(`Could not plant that technique: ${error.message}`);
-  touch(videoId);
-}
-
-/**
- * Undo a planting. Clears the label and drops the join row.
- *
- * Deleting rather than marking skipped is deliberate: "I put that here and
- * changed my mind" is not the same claim as "I considered it and decided
- * against it for this video". The second one is said in the tray, on purpose.
- */
-export async function unplantComponent(videoId: string, beatId: string, componentId: string) {
-  await db
-    .from("script_beats")
-    .update({ function_component_id: null, function_label: null })
-    .eq("id", beatId);
-
-  await db
-    .from("video_components")
-    .delete()
-    .eq("video_id", videoId)
-    .eq("component_id", componentId);
-
-  touch(videoId);
-}
+// Planting a technique on a line lives in story-actions.ts now, as
+// attachTechnique / detachTechnique.
+//
+// It moved because it changed shape. The version that lived here wrote
+// function_label and function_component_id, which meant one technique per line
+// and — through video_components' unique (video_id, component_id) — one line
+// per technique. Re-hooking at 0:04, 0:11 and 0:19 was inexpressible, and
+// tagging a line silently erased what that line was for.
+//
+// The replacement writes script_beat_components and leaves story_role alone.
 
 /**
  * The tray's three-state control: not on this video → used → skipped → off.

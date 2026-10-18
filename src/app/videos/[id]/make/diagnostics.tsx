@@ -1,14 +1,17 @@
 "use client";
 
-import { beatTimeline, clock, type TimedBeat } from "@/lib/timing";
-
-type DiagBeat = TimedBeat & {
-  story_section: string | null;
-  function_label: string | null;
-};
-
-/** Nothing is worth diagnosing until there is something to diagnose. */
-const MIN_BEATS = 3;
+import { useState } from "react";
+import { approxSec, beatTimeline } from "@/lib/timing";
+import {
+  AREA_LABEL,
+  MIN_BEATS,
+  readStory,
+  type Observation,
+  type StoryArea,
+  type StoryBeat,
+  type StoryDirection,
+  type StoryQuestion,
+} from "@/lib/story";
 
 /**
  * What the shape of the script is, said flatly.
@@ -16,115 +19,143 @@ const MIN_BEATS = 3;
  * Every line here is an observation, never an instruction — no red, no warning
  * icon, no "fix this". The framework exists to support writing, and a checklist
  * that appears before the writing does is the failure mode this whole workspace
- * was built to get away from. So: it stays silent until three lines exist, and
+ * was built to get away from. So it stays silent until three lines exist, and
  * then it only describes.
  *
- * Everything is derived from the words on screen, live, so it moves as you
- * write rather than reporting on a version you have already changed.
+ * Two sources, kept visibly apart. THE SHAPE is computed from the words on
+ * screen and moves as you type. THE READ-BACK is what Claude said last time it
+ * was asked, and is stamped as such — an opinion someone formed at a moment,
+ * not a property of the script. Blurring the two would make the machine's guess
+ * look like a measurement.
  */
 export function Diagnostics({
   beats,
+  questions,
+  direction,
+  lensSelected,
+  lensCount,
   targetSec,
 }: {
-  beats: DiagBeat[];
+  beats: StoryBeat[];
+  questions: StoryQuestion[];
+  direction: StoryDirection | null;
+  lensSelected: string | null;
+  lensCount: number;
   targetSec: number | null;
 }) {
+  const [open, setOpen] = useState(true);
+
   const written = beats.filter((b) => (b.text ?? "").trim());
   if (written.length < MIN_BEATS) return null;
 
+  const notes = readStory({
+    beats,
+    questions,
+    direction,
+    lensSelected,
+    lensCount,
+    targetSec,
+  });
+
   const timeline = beatTimeline(written);
-  const times = written.map((b) => timeline.get(b.id)!);
-  const runtime = times.length ? times[times.length - 1].endSec : 0;
+  const runtime = timeline.get(written[written.length - 1].id)?.endSec ?? 0;
+  const opener = timeline.get(written[0].id);
 
-  const notes: string[] = [];
-
-  // --- runtime against the target ---------------------------------------
-  if (targetSec) {
-    const delta = Math.round(runtime - targetSec);
-    notes.push(
-      Math.abs(delta) <= 2
-        ? `~${Math.round(runtime)}s, on the ${targetSec}s target.`
-        : delta > 0
-          ? `~${Math.round(runtime)}s — ${delta}s over the ${targetSec}s target.`
-          : `~${Math.round(runtime)}s — ${Math.abs(delta)}s under the ${targetSec}s target.`,
-    );
-  } else {
-    notes.push(`~${Math.round(runtime)}s of script.`);
-  }
-
-  // --- how long the opening line runs ------------------------------------
-  const opener = times[0];
-  if (opener) {
-    const len = opener.endSec - opener.startSec;
-    notes.push(`Opening line runs ~${len.toFixed(1)}s.`);
-  }
-
-  // --- longest stretch with nothing planted ------------------------------
-  // Measured between labelled beats, including the run-up to the first and the
-  // tail after the last, because dead air at either end still costs a viewer.
-  const marks = written
-    .map((b, i) => ({ b, t: times[i] }))
-    .filter(({ b }) => b.function_label);
-
-  if (marks.length === 0) {
-    notes.push(`Nothing planted yet — type / on a line to place a technique.`);
-  } else {
-    let widest = marks[0].t.startSec;
-    let widestAt = 0;
-
-    for (let i = 1; i < marks.length; i++) {
-      const gap = marks[i].t.startSec - marks[i - 1].t.endSec;
-      if (gap > widest) {
-        widest = gap;
-        widestAt = marks[i - 1].t.endSec;
-      }
-    }
-
-    const tail = runtime - marks[marks.length - 1].t.endSec;
-    if (tail > widest) {
-      widest = tail;
-      widestAt = marks[marks.length - 1].t.endSec;
-    }
-
-    if (widest >= 1) {
-      notes.push(
-        `Longest stretch with nothing planted: ~${Math.round(widest)}s, from ${clock(widestAt)}.`,
-      );
-    }
-  }
-
-  // --- how the time splits across the arc --------------------------------
-  const sectioned = written.filter((b) => b.story_section);
-  if (sectioned.length > 0) {
-    const spans: Record<string, number> = { start: 0, middle: 0, end: 0 };
-    written.forEach((b, i) => {
-      if (!b.story_section) return;
-      spans[b.story_section] += times[i].endSec - times[i].startSec;
-    });
-
-    const named = (["start", "middle", "end"] as const).filter((k) => spans[k] > 0);
-    if (named.length > 0) {
-      notes.push(
-        `Split: ${named.map((k) => `${k} ~${Math.round(spans[k])}s`).join(" · ")}.`,
-      );
-    }
-
-    const loose = written.length - sectioned.length;
-    if (loose > 0) {
-      notes.push(`${loose} ${loose === 1 ? "line has" : "lines have"} no section yet.`);
-    }
-  }
+  // Where each line sits, so an observation can name a moment rather than an id.
+  const at = new Map(written.map((b, i) => [b.id, i + 1]));
 
   return (
     <section className="mt-6 rounded-xl border border-border-soft px-3 py-2.5">
-      <p className="mb-1.5 text-[10px] tracking-wide text-ink-dim">THE SHAPE</p>
-      <ul className="space-y-0.5">
-        {notes.map((note) => (
-          <li key={note} className="text-[11px] leading-relaxed text-ink-faint">
-            {note}
-          </li>
-        ))}
-      </ul>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="mb-1.5 flex w-full items-baseline gap-2 text-left"
+      >
+        <span className="text-[10px] tracking-wide text-ink-dim">THE SHAPE</span>
+        <span className="font-mono text-[10px] text-ink-faint">
+          {approxSec(runtime)}
+          {opener && ` · opens on ~${(opener.endSec - opener.startSec).toFixed(1)}s`}
+        </span>
+        <span className="ml-auto text-[10px] text-ink-faint">{open ? "−" : "+"}</span>
+      </button>
+
+      {open && (
+        <>
+          {notes.length === 0 ? (
+            <p className="text-[11px] leading-relaxed text-ink-faint">
+              Nothing to say about the shape yet.
+            </p>
+          ) : (
+            <Grouped notes={notes} at={at} />
+          )}
+        </>
+      )}
     </section>
   );
+}
+
+/**
+ * Observations under their layer.
+ *
+ * Grouped rather than listed flat because the layers answer different
+ * questions, and eleven undifferentiated notes read as a to-do list however
+ * gently each one is worded. Grouping also makes the silence legible: an area
+ * with nothing under it simply is not there.
+ */
+function Grouped({ notes, at }: { notes: Observation[]; at: Map<string, number> }) {
+  const areas = [...new Set(notes.map((n) => n.area))] as StoryArea[];
+
+  return (
+    <div className="space-y-1.5">
+      {areas.map((area) => (
+        <div key={area}>
+          <p className="text-[9px] uppercase tracking-wide text-ink-faint/60">
+            {AREA_LABEL[area]}
+          </p>
+          <ul className="space-y-0.5">
+            {notes
+              .filter((n) => n.area === area)
+              .map((note, i) => {
+                const lines = (note.beatIds ?? [])
+                  .map((id) => at.get(id))
+                  .filter((n): n is number => Boolean(n));
+
+                return (
+                  <li key={i} className="text-[11px] leading-relaxed text-ink-faint">
+                    {note.text}
+                    {lines.length > 0 && (
+                      <span className="ml-1 font-mono text-[10px] text-ink-faint/60">
+                        {lines.length === 1 ? `line ${lines[0]}` : `lines ${summarise(lines)}`}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** "3–6" rather than "3, 4, 5, 6" — runs are how people read line numbers. */
+function summarise(lines: number[]): string {
+  const sorted = [...new Set(lines)].sort((a, b) => a - b);
+  const parts: string[] = [];
+
+  let start = sorted[0];
+  let prev = sorted[0];
+
+  for (const n of sorted.slice(1)) {
+    if (n === prev + 1) {
+      prev = n;
+      continue;
+    }
+    parts.push(start === prev ? `${start}` : `${start}–${prev}`);
+    start = n;
+    prev = n;
+  }
+  parts.push(start === prev ? `${start}` : `${start}–${prev}`);
+
+  return parts.join(", ");
 }
