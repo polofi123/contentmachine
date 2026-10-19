@@ -1,12 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
-  formatTime, hasVisualEvidence, humanize, legoPatch, parseAnalysis,
+  formatTime, hasVisualEvidence, humanize, legoPatch, parseAnalysis, replaceTranscript, TRANSCRIPT_ORIGIN_LABELS,
   type ParseResult, type VideoAnalysis,
 } from "@/lib/video-analysis";
 import { saveAnalysis } from "./actions";
+import { AiBox, AiPanel, UsageLine, requestAnalysis, type AiConfig, type Preset } from "./ai-panel";
 
 // Mirrors the server cap on the stored original (server-action bodies are limited).
 const MAX_RAW = 200_000;
@@ -24,22 +25,71 @@ const field =
   "w-full rounded-md border border-border bg-surface-2 px-2.5 py-1.5 text-sm outline-none placeholder:text-ink-faint focus:border-accent-dim";
 
 export function ResearchView({
-  videoId, title, analysis, meta, legos,
-}: { videoId: string; title: string; analysis: VideoAnalysis; meta: Meta | null; legos: Legos }) {
+  videoId, title, analysis, meta, legos, ai,
+}: { videoId: string; title: string; analysis: VideoAnalysis; meta: Meta | null; legos: Legos; ai: AiConfig }) {
   const [tab, setTab] = useState<Tab>("summary");
-  const [importing, setImporting] = useState(false);
+  const [panel, setPanel] = useState<"import" | "ai" | null>(null);
+  // An AI result waiting for the user's review. Nothing is saved until they approve it.
+  const [preset, setPresetState] = useState<Preset | null>(null);
+  // Every new preview gets its own key, so the panel never shows a stale one
+  // (an AI result and a captions result would otherwise share a panel).
+  const [presetN, setPresetN] = useState(0);
+  const setPreset = (p: Preset | null) => { setPresetN((n) => n + 1); setPresetState(p); };
+  // One click: the server uses the saved transcript, else the YouTube captions,
+  // else Gemini's own, and returns a draft to review. Nothing is saved yet.
+  const [busy, setBusy] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
+  const abort = useRef<AbortController | null>(null);
+  const close = () => { abort.current?.abort(); setBusy(false); setPanel(null); setPreset(null); setRunError(null); };
+  const toggle = (which: "import" | "ai") => {
+    abort.current?.abort();
+    setBusy(false);
+    setPreset(null);
+    setRunError(null);
+    setPanel((p) => (p === which ? null : which));
+  };
+  useEffect(() => () => abort.current?.abort(), []);
+
+  const analyze = async () => {
+    if (!ai.canYoutube) return toggle("ai");
+    setRunError(null);
+    setPanel(null);
+    setPreset(null);
+    const controller = new AbortController();
+    abort.current = controller;
+    setBusy(true);
+    const res = await requestAnalysis(videoId, "youtube", controller.signal, ai.model);
+    if (controller.signal.aborted) return;
+    setBusy(false);
+    if (!res.ok) return setRunError(res.error);
+    setPreset(res.preset);
+  };
 
   return (
     <div className="min-w-0">
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-lg font-medium leading-snug tracking-tight text-ink">{title}</h1>
-        <button
-          type="button"
-          onClick={() => setImporting((v) => !v)}
-          className="shrink-0 rounded-md border border-accent-dim px-2.5 py-1.5 text-xs text-accent hover:bg-accent-dim/15"
-        >
-          {importing ? "Cancel import" : meta ? "Re-import analysis" : "Import analysis"}
-        </button>
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={busy ? close : analyze}
+            className="rounded-md border border-accent-dim bg-accent-dim/15 px-2.5 py-1.5 text-xs text-accent hover:bg-accent-dim/25"
+          >
+            {busy ? "Analyzing… (click to cancel)" : panel === "ai" ? "Cancel" : "Analyze"}
+          </button>
+          {ai.canYoutube && !busy && (
+            <button type="button" onClick={() => toggle("ai")} className="rounded-md px-2 py-1.5 text-[11px] text-ink-faint hover:text-ink">
+              {panel === "ai" ? "Hide upload" : "Upload MP4 instead"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => toggle("import")}
+            className="rounded-md border border-border px-2.5 py-1.5 text-xs text-ink-dim hover:text-ink"
+          >
+            {panel === "import" ? "Cancel import" : meta ? "Re-import analysis" : "Import analysis"}
+          </button>
+        </div>
       </div>
       <p className="mt-1 text-[11px] text-ink-faint">
         {meta
@@ -47,8 +97,11 @@ export function ResearchView({
           : "No analysis yet. Everything below is empty until you import one."}
       </p>
 
-      {importing && (
-        <ImportPanel videoId={videoId} legos={legos} onDone={() => setImporting(false)} />
+      {busy && <p className="mt-3 text-xs text-ink-dim">Getting the transcript (saved, else YouTube captions, else Gemini) and analyzing. This can take a minute.</p>}
+      {runError && <p role="alert" className="mt-3 text-sm text-accent">{runError}</p>}
+      {panel === "ai" && !preset && <AiPanel videoId={videoId} ai={ai} onResult={setPreset} />}
+      {(panel === "import" || preset) && (
+        <ImportPanel key={preset ? `preview-${presetN}` : "paste"} videoId={videoId} legos={legos} preset={preset} current={analysis} onDone={close} />
       )}
 
       <div role="tablist" className="mt-5 flex flex-wrap gap-1 border-b border-border-soft">
@@ -169,6 +222,7 @@ function SummaryTab({ a, meta }: { a: VideoAnalysis; meta: Meta | null }) {
         </section>
       )}
       <Evidence a={a} />
+      {a.ai && <AiBox ai={a.ai} />}
       {meta && meta.warnings.length > 0 && (
         <section className="rounded-xl border border-accent-dim px-4 py-3 text-sm text-accent">
           <h3 className="text-[11px] uppercase tracking-wide">Import notes</h3>
@@ -198,10 +252,11 @@ function SummaryTab({ a, meta }: { a: VideoAnalysis; meta: Meta | null }) {
 // reads as if someone watched the video.
 function Evidence({ a }: { a: VideoAnalysis }) {
   const rows: [string, boolean, string][] = [
-    ["Spoken words", Boolean(a.transcript.text),
-      a.transcript.origin === "sections" ? "assembled from narrative sections" : "supplied transcript"],
-    ["Timestamps", a.format.sections.some((s) => s.start != null) || a.transcript.segments.some((s) => s.start != null), "supplied"],
-    ["Visual observations", hasVisualEvidence(a), "supplied by the imported analysis"],
+    ["Spoken words", Boolean(a.transcript.text), spokenNote(a)],
+    ["Timestamps", a.format.sections.some((s) => s.start != null) || a.transcript.segments.some((s) => s.start != null),
+      a.ai && !fromCaptions(a) ? "estimated by the AI" : fromCaptions(a) ? "transcript times from the captions; section times as listed" : "supplied"],
+    ["Visual observations", hasVisualEvidence(a),
+      a.ai ? "described by the AI from the video frames" : "supplied by the imported analysis"],
   ];
   return (
     <section className="rounded-xl border border-border-soft bg-surface px-4 py-3">
@@ -216,10 +271,27 @@ function Evidence({ a }: { a: VideoAnalysis }) {
         ))}
       </ul>
       <p className="mt-2 text-[11px] text-ink-faint">
-        Everything shown is imported content. Nothing here was generated or checked by ContentMachine.
+        {a.ai && a.transcript.text && a.transcript.origin !== "ai"
+          ? `Interpreted by ${a.ai.model} from the video itself. The transcript is not the model's: it is ${TRANSCRIPT_ORIGIN_LABELS[a.transcript.origin ?? "pasted"]}, and quotes were checked against it. Idea, hook and format explanations are the model's interpretation.`
+          : a.ai
+            ? `Generated by ${a.ai.model} from the video itself. Transcript and timestamps are model output and are not independently verified; idea, hook and format explanations are the model's interpretation.`
+            : "Everything shown is imported content. Nothing here was generated or checked by ContentMachine."}
       </p>
     </section>
   );
+}
+
+const fromCaptions = (a: VideoAnalysis) => a.transcript.origin === "youtube_captions" || a.transcript.origin === "youtube_auto";
+
+function spokenNote(a: VideoAnalysis): string {
+  switch (a.transcript.origin) {
+    case "ai": return "transcribed by the AI from the audio, unverified";
+    case "youtube_captions": return "YouTube captions written by the creator";
+    case "youtube_auto": return "YouTube auto-captions (speech recognition, may contain errors)";
+    case "subtitles": return "imported subtitle file";
+    case "sections": return "assembled from narrative sections";
+    default: return a.ai ? "transcribed by the AI from the audio" : "supplied transcript";
+  }
 }
 
 function TranscriptTab({ a }: { a: VideoAnalysis }) {
@@ -233,13 +305,13 @@ function TranscriptTab({ a }: { a: VideoAnalysis }) {
       <div className="flex items-center justify-between">
         <h3 className="text-[11px] uppercase tracking-wide text-ink-faint">
           Transcript · {t.text.split(/\s+/).length} words
-          {t.origin === "sections" && " · assembled from narrative sections"}
         </h3>
         <span className="flex gap-3">
           <Copy text={t.text} label="Copy plain" />
           {timed && <Copy label="Copy with times" text={t.segments.map((s) => `${s.start != null ? `[${formatTime(s.start)}] ` : ""}${s.text}`).join("\n")} />}
         </span>
       </div>
+      <TranscriptSource a={a} />
       {t.segments.length > 0 ? (
         <ol className="mt-2 space-y-1.5 text-sm leading-relaxed">
           {t.segments.map((s, i) => (
@@ -253,6 +325,22 @@ function TranscriptTab({ a }: { a: VideoAnalysis }) {
         </ol>
       ) : <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-ink">{t.text}</p>}
     </section>
+  );
+}
+
+/** Where the transcript came from, kept apart from anything the AI interpreted. */
+function TranscriptSource({ a }: { a: VideoAnalysis }) {
+  const t = a.transcript;
+  if (!t.origin) return null;
+  const verified = t.origin !== "ai";
+  return (
+    <p className="mt-1.5 text-[11px]">
+      <span className={`rounded border px-1.5 py-0.5 ${verified ? "border-border text-ink-dim" : "border-accent-dim text-accent"}`}>
+        {TRANSCRIPT_ORIGIN_LABELS[t.origin]}
+      </span>
+      {t.language && <span className="ml-2 text-ink-faint">language: {t.language}</span>}
+      {t.origin === "youtube_auto" && <span className="ml-2 text-ink-faint">Machine-generated by YouTube; names and jargon may be wrong.</span>}
+    </p>
   );
 }
 
@@ -340,10 +428,29 @@ function VisualTab({ a }: { a: VideoAnalysis }) {
 
 // ------------------------------------------------------------------ import
 
-function ImportPanel({ videoId, legos, onDone }: { videoId: string; legos: Legos; onDone: () => void }) {
+/**
+ * A subtitle file carries a transcript and nothing else, so it is added to the
+ * current analysis instead of replacing the whole thing. Anything else parsed
+ * from a paste is a complete analysis and is returned unchanged.
+ */
+function withSubtitlesMerged(parsed: ParseResult, current: VideoAnalysis): ParseResult {
+  if (parsed.analysis.transcript.origin !== "subtitles") return parsed;
+  const warnings = [...parsed.warnings];
+  if (current.transcript.text) warnings.push("This replaces the current transcript. The previous version stays in the history.");
+  const merged = replaceTranscript(current, parsed.analysis.transcript);
+  return {
+    source: current.ai ? "ai_gemini" : "plain_text",
+    analysis: merged.analysis,
+    warnings: [...warnings, ...merged.warnings],
+  };
+}
+
+function ImportPanel({
+  videoId, legos, preset, current, onDone,
+}: { videoId: string; legos: Legos; preset: Preset | null; current: VideoAnalysis; onDone: () => void }) {
   const router = useRouter();
-  const [raw, setRaw] = useState("");
-  const [parsed, setParsed] = useState<ParseResult | null>(null);
+  const [raw, setRaw] = useState(preset?.raw ?? "");
+  const [parsed, setParsed] = useState<ParseResult | null>(preset?.result ?? null);
   const [applyLegos, setApplyLegos] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -364,9 +471,15 @@ function ImportPanel({ videoId, legos, onDone }: { videoId: string; legos: Legos
     start(async () => {
       if (!parsed) return;
       setError(null);
-      const res = await saveAnalysis({
-        videoId, source: parsed.source, raw: raw.slice(0, MAX_RAW), warnings: parsed.warnings, analysis: parsed.analysis, applyLegos,
-      });
+      let res: Awaited<ReturnType<typeof saveAnalysis>>;
+      try {
+        res = await saveAnalysis({
+          videoId, source: parsed.source, raw: raw.slice(0, MAX_RAW), warnings: parsed.warnings, analysis: parsed.analysis, applyLegos,
+        });
+      } catch {
+        // A thrown server action (stale dev server, body too large, network) used to fail silently.
+        return setError("The server did not respond to the save. Restart `pnpm dev`, refresh the page and try again; your edits here are still intact.");
+      }
       if (!res.ok) return setError(res.error);
       if (res.warning) window.alert(res.warning);
       onDone();
@@ -378,8 +491,22 @@ function ImportPanel({ videoId, legos, onDone }: { videoId: string; legos: Legos
       {!parsed ? (
         <>
           <label className="text-xs text-ink-dim" htmlFor="raw-analysis">
-            Paste an “Export for LLM” result, a JSON analysis, or a plain-text breakdown.
+            Paste an “Export for LLM” result, a JSON analysis, a plain-text breakdown, or the contents of an SRT / VTT subtitle file.
           </label>
+          <input
+            type="file"
+            accept=".srt,.vtt,text/vtt,text/plain"
+            aria-label="Subtitle file (SRT or VTT)"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (!f) return;
+              if (f.size > MAX_RAW) return setError("That file is too large to import (200 KB limit).");
+              setError(null);
+              setRaw(await f.text());
+            }}
+            className="mt-2 block text-xs text-ink-dim file:mr-3 file:rounded-md file:border file:border-border file:bg-surface-2 file:px-2.5 file:py-1 file:text-xs file:text-ink-dim"
+          />
           <textarea
             id="raw-analysis"
             value={raw}
@@ -391,7 +518,7 @@ function ImportPanel({ videoId, legos, onDone }: { videoId: string; legos: Legos
           <button
             type="button"
             disabled={!raw.trim()}
-            onClick={() => setParsed(parseAnalysis(raw))}
+            onClick={() => setParsed(withSubtitlesMerged(parseAnalysis(raw), current))}
             className="mt-3 rounded-md border border-accent-dim px-3 py-1.5 text-xs text-accent hover:bg-accent-dim/15 disabled:opacity-40"
           >
             Preview
@@ -401,10 +528,24 @@ function ImportPanel({ videoId, legos, onDone }: { videoId: string; legos: Legos
         <div className="space-y-3">
           <p className="text-xs text-ink-dim">
             Detected: <span className="text-ink">{parsed.source.replace("_", " ")}</span> · {a.format.sections.length} sections ·{" "}
-            {a.transcript.text ? `${a.transcript.text.split(/\s+/).length}-word transcript${a.transcript.origin === "sections" ? " (from sections)" : ""}` : "no transcript"} ·{" "}
+            {a.transcript.text && a.transcript.origin
+              ? `${a.transcript.text.split(/\s+/).length}-word transcript (${TRANSCRIPT_ORIGIN_LABELS[a.transcript.origin]}${a.transcript.language ? `, ${a.transcript.language}` : ""})`
+              : "no transcript"} ·{" "}
             {hasVisualEvidence(a) ? "visual info present" : "no visual info"}
           </p>
           {parsed.warnings.map((w, i) => <p key={i} className="text-xs text-accent">⚠ {w}</p>)}
+          {preset?.note && <p className="text-xs text-ink-dim">{preset.note}</p>}
+          {preset?.kind === "captions" && (
+            <p className="rounded-md border border-border px-3 py-2 text-xs text-ink-dim">
+              Captions fetched from YouTube; no AI was run and nothing has been saved yet. Only the transcript changes — everything else is the current analysis.
+            </p>
+          )}
+          {a.ai && preset?.kind !== "captions" && (
+            <p className="rounded-md border border-accent-dim px-3 py-2 text-xs text-accent">
+              AI-generated from the video. Review it against the video before saving; nothing has been saved yet.
+              {preset && <UsageLine model={preset.model} usage={preset.usage} />}
+            </p>
+          )}
           <p className="text-[11px] text-ink-faint">Check and correct anything below before saving. Empty boxes stay empty.</p>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -425,6 +566,10 @@ function ImportPanel({ videoId, legos, onDone }: { videoId: string; legos: Legos
             <Edit label="Visual category" value={a.visual.category} onChange={(v) => set((d) => { d.visual.category = v; })} />
             <Edit label="Visual layout type" value={a.visual.type} onChange={(v) => set((d) => { d.visual.type = v; })} />
             <Edit label="Visual hook" value={a.visual.hook} onChange={(v) => set((d) => { d.visual.hook = v; })} area />
+            <Edit label="Composition (one per line)" value={a.visual.elements.join("\n")} rows={4} area
+              onChange={(v) => set((d) => { d.visual.elements = (v ?? "").split("\n"); })} />
+            <Edit label="Editing techniques (one per line)" value={a.visual.editing.join("\n")} rows={4} area
+              onChange={(v) => set((d) => { d.visual.editing = (v ?? "").split("\n"); })} />
           </div>
 
           {a.transcript.segments.some((seg) => seg.start != null || seg.end != null) ? (
@@ -442,6 +587,8 @@ function ImportPanel({ videoId, legos, onDone }: { videoId: string; legos: Legos
                       value={seg.text}
                       onChange={(e) => set((d) => {
                         d.transcript.segments[i].text = e.target.value;
+                        // Words changed by a person are no longer exactly what the source said.
+                        if (d.transcript.origin !== "pasted") d.transcript.origin = "pasted";
                         d.transcript.text = d.transcript.segments.map((x) => x.text).filter(Boolean).join(" ") || null;
                       })}
                       className={field}
@@ -456,7 +603,9 @@ function ImportPanel({ videoId, legos, onDone }: { videoId: string; legos: Legos
               value={a.transcript.text}
               area rows={5}
               onChange={(v) => set((d) => {
-                d.transcript = v ? { text: v, segments: [{ start: null, end: null, text: v }], origin: "pasted" } : { text: null, segments: [], origin: null };
+                d.transcript = v
+                  ? { text: v, segments: [], origin: "pasted", language: d.transcript.language ?? null }
+                  : { text: null, segments: [], origin: null, language: null };
               })}
             />
           )}
@@ -475,15 +624,18 @@ function ImportPanel({ videoId, legos, onDone }: { videoId: string; legos: Legos
             </span>
           </label>
 
-          {error && <p role="alert" className="text-sm text-accent">{error}</p>}
+          {/* Sticky, so Save and any error stay in view however long the form is. */}
+          <div className="sticky bottom-0 -mx-4 -mb-4 space-y-2 rounded-b-xl border-t border-border bg-surface px-4 py-3">
+          {error && <p role="alert" className="text-sm text-accent">Not saved: {error}</p>}
           <div className="flex gap-2">
             <button type="button" onClick={save} disabled={pending}
               className="rounded-md border border-accent-dim px-3 py-1.5 text-xs text-accent hover:bg-accent-dim/15 disabled:opacity-40">
               {pending ? "Saving…" : "Save analysis"}
             </button>
-            <button type="button" onClick={() => setParsed(null)} className="rounded-md px-3 py-1.5 text-xs text-ink-faint hover:text-ink">
-              Back to paste
+            <button type="button" onClick={() => (preset ? onDone() : setParsed(null))} className="rounded-md px-3 py-1.5 text-xs text-ink-faint hover:text-ink">
+              {preset ? "Discard" : "Back to paste"}
             </button>
+          </div>
           </div>
         </div>
       )}

@@ -10,6 +10,8 @@ const SOURCE_LABELS: Record<AnalysisSource, string> = {
   json: "JSON (pasted)",
   plain_text: "Text (pasted)",
   manual: "Manual entry",
+  ai_gemini: "AI analysis (Gemini)",
+  youtube_captions: "YouTube captions",
 };
 // Server Actions reject bodies over 1 MB, so the pasted original is capped well
 // below that (the client applies the same cap) and the parsed analysis is
@@ -44,9 +46,12 @@ export async function saveAnalysis(input: {
   if (typeof input.videoId !== "string" || !UUID.test(input.videoId)) return { ok: false, error: "Invalid video." };
   if (typeof input.raw !== "string") return { ok: false, error: "Invalid pasted text." };
   const warnings = Array.isArray(input.warnings) ? input.warnings.filter((w): w is string => typeof w === "string") : [];
-  const source: AnalysisSource = input.source in SOURCE_LABELS ? (input.source as AnalysisSource) : "manual";
+  const source: AnalysisSource = Object.hasOwn(SOURCE_LABELS, input.source) ? (input.source as AnalysisSource) : "manual";
 
   const analysis = sanitizeAnalysis(input.analysis);
+  // AI provenance may only ride along with an AI-sourced save; a paste or manual
+  // entry cannot claim to be model output.
+  if (source !== "ai_gemini") analysis.ai = null;
   const analysisJson = JSON.parse(JSON.stringify(analysis));
   if (JSON.stringify(analysisJson).length > MAX_ANALYSIS_JSON) {
     return { ok: false, error: "This analysis is too large to save. Trim the transcript or sections and try again." };

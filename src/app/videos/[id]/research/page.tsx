@@ -2,9 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { VideoPlayer } from "@/components/video-player";
 import { db } from "@/lib/db";
-import { compactNumber } from "@/lib/format";
+import { outlierScore } from "@/lib/format";
+import { normalizeVideoUrl } from "@/lib/platform";
+import { GEMINI_MODEL, geminiConfigured } from "@/lib/video-ai";
+import { youtubeConfigured } from "@/lib/youtube-api";
 import { emptyAnalysis, sanitizeAnalysis } from "@/lib/video-analysis";
 import { ResearchView } from "./research-view";
+import { StatsPanel } from "./stats-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -22,15 +26,17 @@ export default async function ResearchPage({
   if (!UUID.test(id)) notFound();
 
   const [{ data: video }, { data: analysisRow }, { data: memberships }, { data: latest }] = await Promise.all([
-    db.from("videos").select("id, title, url, platform, channel_name, published_at, lego_topic, lego_angle, lego_hook, lego_story_structure, lego_visual_format").eq("id", id).maybeSingle(),
+    db.from("videos").select("id, title, url, platform, channel_name, published_at, channel_avg_views, lego_topic, lego_angle, lego_hook, lego_story_structure, lego_visual_format").eq("id", id).maybeSingle(),
     db.from("video_analyses").select("version, source, source_label, analysis, raw_input, parse_warnings, created_at").eq("video_id", id).eq("is_current", true).maybeSingle(),
     db.from("collection_videos").select("collection_id, collections(id, name)").eq("video_id", id),
-    db.from("video_latest_metrics").select("views").eq("video_id", id).maybeSingle(),
+    db.from("video_latest_metrics").select("views, likes, comments").eq("video_id", id).maybeSingle(),
   ]);
   if (!video) notFound();
 
   const collections = (memberships ?? []).flatMap((m) => (m.collections ? [m.collections] : []));
   const backTo = collections.find((c) => c.id === from) ?? collections[0] ?? null;
+  const link = video.url ? normalizeVideoUrl(video.url) : null;
+  const youtubeLink = link?.platform === "youtube" && link.videoId ? link : null;
   const analysis = analysisRow ? sanitizeAnalysis(analysisRow.analysis) : emptyAnalysis();
 
   return (
@@ -46,8 +52,15 @@ export default async function ResearchPage({
         <VideoPlayer url={video.url} title={video.title} startOpen className={video.platform === "instagram" ? "h-[560px]" : "aspect-[9/16]"} />
         <p className="mt-3 text-xs text-ink-faint">
           {video.channel_name && <span>@{video.channel_name}</span>}
-          {latest?.views != null && <span> · {compactNumber(latest.views)} views</span>}
         </p>
+        <StatsPanel
+          videoId={id}
+          views={latest?.views ?? null}
+          likes={latest?.likes ?? null}
+          comments={latest?.comments ?? null}
+          outlier={outlierScore(latest?.views ?? null, video.channel_avg_views)}
+          youtube={youtubeLink === null ? "none" : youtubeConfigured() ? "ready" : "no-key"}
+        />
         {collections.length > 0 && (
           <p className="mt-2 text-[11px] text-ink-faint">
             In {collections.map((c, i) => (
@@ -81,6 +94,11 @@ export default async function ResearchPage({
           warnings: Array.isArray(analysisRow.parse_warnings) ? (analysisRow.parse_warnings as string[]) : [],
           raw: analysisRow.raw_input,
         } : null}
+        ai={{
+          ready: geminiConfigured(),
+          canYoutube: youtubeLink !== null,
+          model: GEMINI_MODEL,
+        }}
         legos={{
           topic: video.lego_topic, angle: video.lego_angle, hook: video.lego_hook,
           structure: video.lego_story_structure, visual: video.lego_visual_format,

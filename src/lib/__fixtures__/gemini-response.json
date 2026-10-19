@@ -1,0 +1,45 @@
+{
+  "summary": "A creator shows two years of daily practice in a fast montage.",
+  "has_speech": true,
+  "spoken_language": "en",
+  "transcript": [
+    { "start": "00:00", "end": "00:03", "text": "Two years ago I decided to change my routine" },
+    { "start": "00:03", "end": "00:06", "text": "I bought a cheap kettlebell and a timer" },
+    { "start": "00:06", "end": "00:10", "text": "I practiced every single morning before work" },
+    { "start": "00:10", "end": "00:13", "text": "TO BE CONTINUED" }
+  ],
+  "topic": "Two-year practice journey",
+  "idea_seed": "Documenting a long skill journey",
+  "angle": "Frame practice as measurable progress.",
+  "common_belief": "Success is sudden.",
+  "contrarian_reality": "Results are delayed and daily.",
+  "supporting_evidence": ["Daily practice compounds."],
+  "hook": {
+    "spoken": "Two years ago I decided to change my routine",
+    "category": "personal_experience",
+    "template": "[Time period] ago I decided to [change]",
+    "why": "A relatable starting point.",
+    "visual": "Creator in an ordinary kitchen, text overlay reading the same sentence."
+  },
+  "storytelling": {
+    "category": "storytelling",
+    "type": "heros_journey",
+    "variation": "Fast chronological montage.",
+    "reasoning": "Contrasts the start with the result.",
+    "structure_summary": "Start, effort, payoff, cliffhanger.",
+    "sections": [
+      { "name": "The Catalyst", "description": "The decision.", "start": "00:00", "end": "00:03",
+        "transcript_sentences": ["Two years ago I decided to change my routine"] },
+      { "name": "The Cliffhanger", "description": "Promise more.", "start": "00:10", "end": "00:13",
+        "transcript_sentences": ["TO BE CONTINUED"] }
+    ]
+  },
+  "visual": {
+    "layout_category": "in_world_vlog",
+    "layout_type": "vlog_hybrid",
+    "composition": ["00:00 vertical framing, subject centred", "00:03 text overlay with the spoken line"],
+    "editing": ["00:03 hard cut to a new location", "00:10 quick zoom on the final line"]
+  },
+  "confidence": { "transcript": "high", "idea": "medium", "hook": "high", "storytelling": "medium", "visual": "low" },
+  "uncertainties": ["Background music lyrics could not be made out."]
+}
