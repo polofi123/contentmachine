@@ -1,5 +1,8 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { VideoPlayer } from "@/components/video-player";
 import { db } from "@/lib/db";
+import { embedUrl } from "@/lib/platform";
 import { addSlot } from "./actions";
 import { loadSlots } from "./data";
 import { SlotStack } from "./slot-stack";
@@ -14,7 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function VideoPage({ params }: PageProps<"/videos/[id]"> ) {
   const { id } = await params;
 
-  const { data: video } = await db.from("videos").select("id, is_mine").eq("id", id).maybeSingle();
+  const { data: video } = await db.from("videos").select("id, is_mine, url, title").eq("id", id).maybeSingle();
 
   if (!video) notFound();
   if (video.is_mine) redirect(`/videos/${id}/make`);
@@ -28,8 +31,23 @@ export default async function VideoPage({ params }: PageProps<"/videos/[id]"> ) 
       .order("measured_at", { ascending: false }),
   ]);
 
+  // Watching and describing side by side: the Legos are observations of this
+  // video, so the video stays in view while you write them.
+  const hasPlayer = embedUrl(video.url) !== null;
+
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className={hasPlayer ? "mx-auto max-w-5xl lg:grid lg:grid-cols-[300px_1fr] lg:gap-8" : "mx-auto max-w-3xl"}>
+      {hasPlayer && (
+        <aside className="mb-6 lg:sticky lg:top-20 lg:mb-0 lg:self-start">
+          <VideoPlayer url={video.url} title={video.title} startOpen />
+        </aside>
+      )}
+      <div>
+      <p className="mb-4 text-xs">
+        <Link href={`/videos/${id}/research`} className="text-accent hover:underline">
+          Research view: transcript, hook, story &amp; visual analysis →
+        </Link>
+      </p>
       {slots.active.length === 0 && (
         <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center">
           <p className="text-sm text-ink-dim">This build has no slots yet.</p>
@@ -61,6 +79,7 @@ export default async function VideoPage({ params }: PageProps<"/videos/[id]"> ) 
         <h2 className="mb-2 text-sm text-ink">Numbers</h2>
         <MetricsBody videoId={id} history={metrics ?? []} />
       </section>
+      </div>
     </div>
   );
 }

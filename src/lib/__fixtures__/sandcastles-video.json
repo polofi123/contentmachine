@@ -1,0 +1,101 @@
+{
+  "video_uuid": "00000000-0000-4000-8000-000000000001",
+  "url": "https://example.com/reel/FIXTURE/",
+  "platform": "instagram",
+  "title": "Fixture video",
+  "caption": "Fixture caption",
+  "view_count": 1000000,
+  "like_count": 50000,
+  "comment_count": 300,
+  "engagement_rate": 0.05,
+  "outlier_score": 10.5,
+  "summary": "A creator documents two years of daily practice.",
+  "seed": "Documenting a multi-year skill journey",
+  "topic": "Multi-year practice journey",
+  "angle": "Frame practice as a measurable progression.",
+  "common_belief": "Success is sudden or lucky.",
+  "contrarian_reality": "Results are the delayed outcome of daily effort.",
+  "supporting_evidence": [
+    "Daily practice compounds.",
+    "Public progress is verifiable."
+  ],
+  "spoken_hook": "Two years ago I decided to change my routine.",
+  "spoken_hook_category": "personal_experience",
+  "spoken_hook_madlib": "[Time period] ago I decided to [change].",
+  "hook_alignment": "Text and speech align on a relatable starting point.",
+  "format_category": "storytelling",
+  "format_type": "heros_journey",
+  "format_flavor": "A fast chronological montage.",
+  "format_reasoning": "Contrasts the ordinary start with the earned result.",
+  "visual_layout_category": "in_world_vlog",
+  "visual_layout_type": "vlog_hybrid",
+  "analysis": {},
+  "narrative_structure": {
+    "structure_summary": "A chronological escalation from a humble start to mastery.",
+    "structure_sections": [
+      {
+        "section_name": "The Catalyst",
+        "section_description": "Open with the moment that started the change.",
+        "transcript_sentences": [
+          "Two years ago I decided to change my routine"
+        ],
+        "start_second": 0,
+        "end_second": 3
+      },
+      {
+        "section_name": "The First Step",
+        "section_description": "Show the small first action.",
+        "transcript_sentences": [
+          "I bought a cheap kettlebell and a timer"
+        ],
+        "start_second": 3,
+        "end_second": 6
+      },
+      {
+        "section_name": "The Grind",
+        "section_description": "State the effort required.",
+        "transcript_sentences": [
+          "I practiced for ninety minutes every single morning before work"
+        ],
+        "start_second": 6,
+        "end_second": 10
+      },
+      {
+        "section_name": "The Sharing",
+        "section_description": "Explain going public.",
+        "transcript_sentences": [
+          "Then I started posting my progress online"
+        ],
+        "start_second": 10,
+        "end_second": 13
+      },
+      {
+        "section_name": "The Resolve",
+        "section_description": "Declare the mindset.",
+        "transcript_sentences": [
+          "I promised myself I would never skip two days in a row"
+        ],
+        "start_second": 13,
+        "end_second": 17
+      },
+      {
+        "section_name": "The Result",
+        "section_description": "Montage of outcomes.",
+        "transcript_sentences": [
+          "And this is what happened afterward"
+        ],
+        "start_second": 17,
+        "end_second": 21
+      },
+      {
+        "section_name": "The Cliffhanger",
+        "section_description": "Promise more to come.",
+        "transcript_sentences": [
+          "TO BE CONTINUED"
+        ],
+        "start_second": 21,
+        "end_second": 23
+      }
+    ]
+  }
+}

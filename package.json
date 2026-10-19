@@ -17,7 +17,8 @@
     "db:verify": "supabase db reset && pnpm db:check",
     "db:check": "docker exec -i supabase_db_content-system psql -U postgres -d postgres -f - < supabase/scripts/verify.sql",
     "db:seed": "docker exec -i supabase_db_content-system psql -U postgres -d postgres -f - < supabase/seed.sql",
-    "db:types": "supabase gen types typescript --local > src/lib/database.types.ts"
+    "db:types": "supabase gen types typescript --local > src/lib/database.types.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
@@ -38,7 +39,8 @@
     "eslint-config-next": "16.3.1",
     "supabase": "^2.115.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3"
   },
   "packageManager": "pnpm@9.1.1"
 }

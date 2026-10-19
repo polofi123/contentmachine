@@ -226,6 +226,80 @@ export type Database = {
           },
         ]
       }
+      collection_videos: {
+        Row: {
+          added_at: string
+          collection_id: string
+          note: string
+          video_id: string
+        }
+        Insert: {
+          added_at?: string
+          collection_id: string
+          note?: string
+          video_id: string
+        }
+        Update: {
+          added_at?: string
+          collection_id?: string
+          note?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collection_videos_collection_id_fkey"
+            columns: ["collection_id"]
+            isOneToOne: false
+            referencedRelation: "collections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_videos_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_completeness"
+            referencedColumns: ["video_id"]
+          },
+          {
+            foreignKeyName: "collection_videos_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_videos_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      collections: {
+        Row: {
+          category: string
+          created_at: string
+          description: string
+          id: string
+          name: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          description?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       components: {
         Row: {
           archived_at: string | null
@@ -1112,6 +1186,70 @@ export type Database = {
           },
         ]
       }
+      video_analyses: {
+        Row: {
+          analysis: Json
+          created_at: string
+          id: string
+          is_current: boolean
+          parse_warnings: Json
+          raw_input: string
+          source: string
+          source_label: string
+          updated_at: string
+          version: number
+          video_id: string
+        }
+        Insert: {
+          analysis?: Json
+          created_at?: string
+          id?: string
+          is_current?: boolean
+          parse_warnings?: Json
+          raw_input?: string
+          source: string
+          source_label?: string
+          updated_at?: string
+          version?: number
+          video_id: string
+        }
+        Update: {
+          analysis?: Json
+          created_at?: string
+          id?: string
+          is_current?: boolean
+          parse_warnings?: Json
+          raw_input?: string
+          source?: string
+          source_label?: string
+          updated_at?: string
+          version?: number
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_analyses_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_completeness"
+            referencedColumns: ["video_id"]
+          },
+          {
+            foreignKeyName: "video_analyses_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "video_analyses_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       video_components: {
         Row: {
           anchor_beat_id: string | null
@@ -1343,6 +1481,7 @@ export type Database = {
           platform_video_id: string | null
           published_at: string | null
           status: string | null
+          thumbnail_url: string | null
           title: string
           updated_at: string
           url: string | null
@@ -1368,6 +1507,7 @@ export type Database = {
           platform_video_id?: string | null
           published_at?: string | null
           status?: string | null
+          thumbnail_url?: string | null
           title: string
           updated_at?: string
           url?: string | null
@@ -1393,6 +1533,7 @@ export type Database = {
           platform_video_id?: string | null
           published_at?: string | null
           status?: string | null
+          thumbnail_url?: string | null
           title?: string
           updated_at?: string
           url?: string | null
@@ -1546,7 +1687,17 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      save_video_analysis: {
+        Args: {
+          p_analysis: Json
+          p_raw: string
+          p_source: string
+          p_source_label: string
+          p_video_id: string
+          p_warnings: Json
+        }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never
