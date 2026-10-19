@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { updateComponent, setArchived, namePlaceholder } from "./actions";
 
 export type ComponentRow = {
@@ -12,6 +12,13 @@ export type ComponentRow = {
   is_placeholder: boolean;
   archived_at: string | null;
   children?: ComponentRow[];
+};
+
+// True while the page address points at this card (/library#c-<id>), so a link from
+// elsewhere lands on it already open.
+const subscribeHash = (cb: () => void) => {
+  window.addEventListener("hashchange", cb);
+  return () => window.removeEventListener("hashchange", cb);
 };
 
 function Chip({ children, tone = "dim" }: { children: React.ReactNode; tone?: "dim" | "accent" | "warn" }) {
@@ -30,13 +37,21 @@ function Chip({ children, tone = "dim" }: { children: React.ReactNode; tone?: "d
 }
 
 export function ComponentCard({ c, depth = 0 }: { c: ComponentRow; depth?: number }) {
-  const [open, setOpen] = useState(false);
+  const [userOpen, setOpen] = useState<boolean | null>(null);
   const [editing, setEditing] = useState(false);
+  const anchor = `c-${c.id}`;
+  const linked = useSyncExternalStore(subscribeHash, () => window.location.hash === `#${anchor}`, () => false);
+  // Until the user clicks, the address decides; after that, their click does.
+  const open = userOpen ?? linked;
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (linked) box.current?.scrollIntoView({ block: "center" });
+  }, [linked]);
 
   const archived = Boolean(c.archived_at);
 
   return (
-    <div className={depth > 0 ? "ml-4 border-l border-border-soft pl-4 sm:ml-6 sm:pl-5" : ""}>
+    <div id={anchor} ref={box} className={`scroll-mt-20 ${depth > 0 ? "ml-4 border-l border-border-soft pl-4 sm:ml-6 sm:pl-5" : ""}`}>
       <div
         className={`rounded-lg border transition-colors ${
           c.is_placeholder
@@ -46,7 +61,7 @@ export function ComponentCard({ c, depth = 0 }: { c: ComponentRow; depth?: numbe
       >
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => setOpen(!open)}
           className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left"
         >
           <span className="mt-0.5 w-3 shrink-0 font-mono text-[10px] text-ink-faint">

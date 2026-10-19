@@ -295,7 +295,8 @@ export function retrieve(
       return { element, raw: score * boost, matched: [...(hits.get(docIndex) ?? [])] };
     })
     .filter((r) => (citableOnly ? r.element.citable : true))
-    .sort((a, b) => b.raw - a.raw)
+    // Equal scores are ordered by id, so the candidates never depend on the order rows came back from the database.
+    .sort((a, b) => b.raw - a.raw || (a.element.id < b.element.id ? -1 : a.element.id > b.element.id ? 1 : 0))
     .slice(0, limit);
 
   const top = ranked[0]?.raw ?? 1;

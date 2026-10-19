@@ -300,6 +300,241 @@ export type Database = {
         }
         Relationships: []
       }
+      component_mapping_reviews: {
+        Row: {
+          basis: string | null
+          created_at: string
+          decision: string
+          id: string
+          mapping_id: string
+          note: string | null
+          seq: number
+        }
+        Insert: {
+          basis?: string | null
+          created_at?: string
+          decision: string
+          id?: string
+          mapping_id: string
+          note?: string | null
+          seq?: never
+        }
+        Update: {
+          basis?: string | null
+          created_at?: string
+          decision?: string
+          id?: string
+          mapping_id?: string
+          note?: string | null
+          seq?: never
+        }
+        Relationships: [
+          {
+            foreignKeyName: "component_mapping_reviews_mapping_id_fkey"
+            columns: ["mapping_id"]
+            isOneToOne: false
+            referencedRelation: "component_mappings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "component_mapping_reviews_mapping_id_fkey"
+            columns: ["mapping_id"]
+            isOneToOne: false
+            referencedRelation: "component_mappings_current"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      component_mapping_runs: {
+        Row: {
+          analysis_id: string
+          created_at: string
+          id: string
+          input_hash: string | null
+          is_current: boolean
+          library_candidates: number | null
+          library_hash: string | null
+          library_total: number | null
+          model: string
+          prompt_version: string | null
+          settings: Json | null
+          trace: Json | null
+          transcript_origin: string | null
+          video_id: string
+        }
+        Insert: {
+          analysis_id: string
+          created_at?: string
+          id?: string
+          input_hash?: string | null
+          is_current?: boolean
+          library_candidates?: number | null
+          library_hash?: string | null
+          library_total?: number | null
+          model: string
+          prompt_version?: string | null
+          settings?: Json | null
+          trace?: Json | null
+          transcript_origin?: string | null
+          video_id: string
+        }
+        Update: {
+          analysis_id?: string
+          created_at?: string
+          id?: string
+          input_hash?: string | null
+          is_current?: boolean
+          library_candidates?: number | null
+          library_hash?: string | null
+          library_total?: number | null
+          model?: string
+          prompt_version?: string | null
+          settings?: Json | null
+          trace?: Json | null
+          transcript_origin?: string | null
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "component_mapping_runs_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "video_analyses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "component_mapping_runs_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_completeness"
+            referencedColumns: ["video_id"]
+          },
+          {
+            foreignKeyName: "component_mapping_runs_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "component_mapping_runs_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      component_mappings: {
+        Row: {
+          ai_status: string
+          component_id: string
+          confidence: number | null
+          created_at: string
+          definition_excerpt: string | null
+          directness: string
+          end_sec: number | null
+          evidence: Json
+          explanation: string
+          id: string
+          origin: string
+          run_id: string
+          search_text: string
+          sort_order: number
+          start_sec: number | null
+          uncertainty: Json
+          video_id: string
+        }
+        Insert: {
+          ai_status: string
+          component_id: string
+          confidence?: number | null
+          created_at?: string
+          definition_excerpt?: string | null
+          directness: string
+          end_sec?: number | null
+          evidence: Json
+          explanation: string
+          id?: string
+          origin?: string
+          run_id: string
+          search_text?: string
+          sort_order?: number
+          start_sec?: number | null
+          uncertainty?: Json
+          video_id: string
+        }
+        Update: {
+          ai_status?: string
+          component_id?: string
+          confidence?: number | null
+          created_at?: string
+          definition_excerpt?: string | null
+          directness?: string
+          end_sec?: number | null
+          evidence?: Json
+          explanation?: string
+          id?: string
+          origin?: string
+          run_id?: string
+          search_text?: string
+          sort_order?: number
+          start_sec?: number | null
+          uncertainty?: Json
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "component_mappings_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "component_performance"
+            referencedColumns: ["component_id"]
+          },
+          {
+            foreignKeyName: "component_mappings_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "components"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "component_mappings_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "library_mechanism_usage"
+            referencedColumns: ["component_id"]
+          },
+          {
+            foreignKeyName: "component_mappings_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "component_mapping_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "component_mappings_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_completeness"
+            referencedColumns: ["video_id"]
+          },
+          {
+            foreignKeyName: "component_mappings_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "component_mappings_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       components: {
         Row: {
           archived_at: string | null
@@ -1542,6 +1777,92 @@ export type Database = {
       }
     }
     Views: {
+      component_mappings_current: {
+        Row: {
+          ai_status: string | null
+          analysis_id: string | null
+          component_id: string | null
+          confidence: number | null
+          definition_excerpt: string | null
+          directness: string | null
+          end_sec: number | null
+          evidence: Json | null
+          explanation: string | null
+          id: string | null
+          mapped_at: string | null
+          model: string | null
+          origin: string | null
+          review_basis: string | null
+          review_decision: string | null
+          review_note: string | null
+          reviewed_at: string | null
+          run_id: string | null
+          search_text: string | null
+          sort_order: number | null
+          start_sec: number | null
+          transcript_origin: string | null
+          uncertainty: Json | null
+          video_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "component_mapping_runs_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "video_analyses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "component_mapping_runs_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_completeness"
+            referencedColumns: ["video_id"]
+          },
+          {
+            foreignKeyName: "component_mapping_runs_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "video_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "component_mapping_runs_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "component_mappings_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "component_performance"
+            referencedColumns: ["component_id"]
+          },
+          {
+            foreignKeyName: "component_mappings_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "components"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "component_mappings_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "library_mechanism_usage"
+            referencedColumns: ["component_id"]
+          },
+          {
+            foreignKeyName: "component_mappings_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "component_mapping_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       component_performance: {
         Row: {
           avg_views_when_skipped: number | null
@@ -1687,6 +2008,23 @@ export type Database = {
       }
     }
     Functions: {
+      save_component_mapping_run: {
+        Args: {
+          p_analysis_id: string
+          p_input_hash: string
+          p_library_candidates: number
+          p_library_hash: string
+          p_library_total: number
+          p_mappings: Json
+          p_model: string
+          p_prompt_version: string
+          p_settings: Json
+          p_trace: Json
+          p_transcript_origin: string
+          p_video_id: string
+        }
+        Returns: string
+      }
       save_video_analysis: {
         Args: {
           p_analysis: Json

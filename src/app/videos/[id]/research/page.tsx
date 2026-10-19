@@ -4,9 +4,11 @@ import { VideoPlayer } from "@/components/video-player";
 import { db } from "@/lib/db";
 import { outlierScore } from "@/lib/format";
 import { normalizeVideoUrl } from "@/lib/platform";
+import { aiConfigured } from "@/lib/ai";
 import { GEMINI_MODEL, geminiConfigured } from "@/lib/video-ai";
 import { youtubeConfigured } from "@/lib/youtube-api";
 import { emptyAnalysis, sanitizeAnalysis } from "@/lib/video-analysis";
+import { loadMappings, otherVideoCounts } from "./mapping";
 import { ResearchView } from "./research-view";
 import { StatsPanel } from "./stats-panel";
 
@@ -38,6 +40,8 @@ export default async function ResearchPage({
   const link = video.url ? normalizeVideoUrl(video.url) : null;
   const youtubeLink = link?.platform === "youtube" && link.videoId ? link : null;
   const analysis = analysisRow ? sanitizeAnalysis(analysisRow.analysis) : emptyAnalysis();
+  const mappings = await loadMappings(id);
+  const others = mappings ? await otherVideoCounts([...new Set(mappings.rows.map((r) => r.component.id))], id) : {};
 
   return (
     <div className="lg:grid lg:grid-cols-[300px_1fr] lg:gap-8">
@@ -99,6 +103,7 @@ export default async function ResearchPage({
           canYoutube: youtubeLink !== null,
           model: GEMINI_MODEL,
         }}
+        components={{ mappings, others, ready: aiConfigured(), hasAnalysis: Boolean(analysisRow), hasTranscript: Boolean(analysis.transcript.text) }}
         legos={{
           topic: video.lego_topic, angle: video.lego_angle, hook: video.lego_hook,
           structure: video.lego_story_structure, visual: video.lego_visual_format,

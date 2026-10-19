@@ -88,21 +88,35 @@ export async function askJson<T>({
   prompt,
   schema,
   maxTokens = 4000,
+  houseRules = HOUSE_RULES,
+  thinking = "adaptive",
 }: {
   system?: string;
   prompt: string;
   schema: JsonSchema;
   maxTokens?: number;
+  /**
+   * The script-editor voice every prompt inherits. Pass null for a task that is
+   * not editing a script (reading a reference video, say), where "every
+   * criticism ships with a fix" and "write in their voice" would contradict it.
+   */
+  houseRules?: string | null;
+  /**
+   * "off" turns thinking off. This model does not accept `temperature` at all
+   * (the API answers "deprecated for this model", and with adaptive thinking it
+   * must be 1), so this is the only sampling setting a caller can change.
+   */
+  thinking?: "adaptive" | "off";
 }): Promise<T> {
   const response = await client().beta.messages.create({
     model: STORY_MODEL,
     max_tokens: maxTokens,
-    system: [HOUSE_RULES, system].filter(Boolean).join("\n\n"),
+    system: [houseRules, system].filter(Boolean).join("\n\n"),
     messages: [{ role: "user", content: prompt }],
 
     // Adaptive is the default on this model; stated anyway so the intent
     // survives a model change that does not share that default.
-    thinking: { type: "adaptive" },
+    thinking: thinking === "off" ? { type: "disabled" } : { type: "adaptive" },
 
     output_config: {
       // The work is one careful read of a page of text. `high` is the floor for

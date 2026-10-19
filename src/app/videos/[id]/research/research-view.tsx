@@ -7,6 +7,7 @@ import {
   type ParseResult, type VideoAnalysis,
 } from "@/lib/video-analysis";
 import { saveAnalysis } from "./actions";
+import { ComponentsTab, type ComponentsTabData } from "./components-tab";
 import { AiBox, AiPanel, UsageLine, requestAnalysis, type AiConfig, type Preset } from "./ai-panel";
 
 // Mirrors the server cap on the stored original (server-action bodies are limited).
@@ -17,7 +18,7 @@ type Legos = { topic: string | null; angle: string | null; hook: string | null; 
 
 const TABS = [
   ["summary", "Summary"], ["transcript", "Transcript"], ["idea", "Idea Analysis"],
-  ["hook", "Hook"], ["story", "Storytelling"], ["visual", "Visual Layout"],
+  ["hook", "Hook"], ["story", "Storytelling"], ["visual", "Visual Layout"], ["components", "Components"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
@@ -25,8 +26,8 @@ const field =
   "w-full rounded-md border border-border bg-surface-2 px-2.5 py-1.5 text-sm outline-none placeholder:text-ink-faint focus:border-accent-dim";
 
 export function ResearchView({
-  videoId, title, analysis, meta, legos, ai,
-}: { videoId: string; title: string; analysis: VideoAnalysis; meta: Meta | null; legos: Legos; ai: AiConfig }) {
+  videoId, title, analysis, meta, legos, ai, components,
+}: { videoId: string; title: string; analysis: VideoAnalysis; meta: Meta | null; legos: Legos; ai: AiConfig; components: ComponentsTabData }) {
   const [tab, setTab] = useState<Tab>("summary");
   const [panel, setPanel] = useState<"import" | "ai" | null>(null);
   // An AI result waiting for the user's review. Nothing is saved until they approve it.
@@ -127,6 +128,7 @@ export function ResearchView({
         {tab === "hook" && <HookTab a={analysis} />}
         {tab === "story" && <StoryTab a={analysis} />}
         {tab === "visual" && <VisualTab a={analysis} />}
+        {tab === "components" && <ComponentsTab videoId={videoId} data={components} />}
       </div>
     </div>
   );
